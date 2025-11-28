@@ -74,7 +74,7 @@ function handlePr(addr, keyword) {
 }
 
 
-const prs = ["1045BFED0"]
+const prs = ["104565AD0", "104566E24", "1045CF820", "104590888", "1045BFED0", "104394290", "1043877CC", "104387764", "1043382C0"]
 const k = "";
 for (let pr of prs) {
     handlePr(pr, k);
