@@ -36,7 +36,7 @@ Operation: read
 ```
 
 sub_104622628 应该是日志打印的函数        
-0x1057ee3a8 会打印输入框的文字        
+0x105a01e84 会打印输入框的文字        
 0x105B7E990 QNSView handleKeyEvent:eventType 键盘事件        
 
 
