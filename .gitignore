@@ -6,3 +6,4 @@ diaphora_batch*
 data
 .venv
 go_al/*.go
+onebot/onebot

@@ -44,7 +44,6 @@ var taskIdGlobal = 0x20000090 // 最好比较大，不和原始的微信消息�
 var receiverGlobal = "wxid_"
 var contentGlobal = "";
 var lastSendTime = 0;
-var messageId = 0;
 
 // 打印消息的地址，便于查询问题
 function printAddr() {
@@ -344,6 +343,9 @@ function attachReq2buf() {
             taskIdGlobal = 0;
             receiverGlobal = "";
             contentGlobal = "";
+            send({
+                type: "finish",
+            })
         }
     });
 }
@@ -486,6 +488,7 @@ function setReceiver() {
             const x1 = this.context.x1;
             var sender = x1.add(0x18).readUtf8String();
             var receiver = x1.add(0x30).readUtf8String();
+            var selfId = x1.add(0x48).readUtf8String();
 
             // 3. 从 0xd0 开始处理
             var d0Pos = x1.add(0xd0);
@@ -505,15 +508,32 @@ function setReceiver() {
                 }
             }
 
-            messageId++
+            var msgType = "private"
+            var groupId = ""
+            if (receiver.includes("@chatroom")) {
+                msgType = "group"
+                groupId = receiver
+            }
+
+            var parts = strD0.split('\u2005');
+            var messages = [];
+            for (let part of parts) {
+                if (part.startsWith("@")) {
+                    messages.push({type: "at", data: {qq: selfId}});
+                } else {
+                    messages.push({type: "text", data: {text: part}});
+                }
+            }
+
             send({
-                message_type: "private",
+                message_type: msgType,
                 user_id: sender,
-                self_id: receiver,
-                message_id: messageId,
+                self_id: selfId,
+                group_id: groupId,
+                message_id: taskIdGlobal,
                 type: "send",
                 raw: {peerUid: receiver},
-                message: [{type: "text", data: {text: strD0}}]
+                message: messages
             })
         },
     });

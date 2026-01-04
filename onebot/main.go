@@ -7,6 +7,8 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -27,10 +29,13 @@ var (
 	
 	msgChan    = make(chan *SendMsg, 10)
 	finishChan = make(chan struct{})
+	
+	config = &Config{}
 )
 
 type SendMsg struct {
 	UserId  string
+	GroupID string
 	Content string
 }
 
@@ -38,6 +43,7 @@ type SendMsg struct {
 type SendRequest struct {
 	Message []*Message `json:"message"`
 	UserID  string     `json:"user_id"`
+	GroupID string     `json:"group_id"`
 }
 
 type Message struct {
@@ -50,19 +56,45 @@ type SendRequestData struct {
 	Text string `json:"text"`
 }
 
+type Config struct {
+	FridaType       string `json:"frida_type"`
+	SendURL         string `json:"send_url"`
+	ReceiveHost     string `json:"receive_host"`
+	FridaGadgetAddr string `json:"frida_gadget_addr"`
+	WechatPid       int    `json:"wechat_pid"`
+	OnebotToken     string `json:"onebot_token"`
+}
+
+func initFlag() {
+	flag.StringVar(&config.FridaType, "type", "local", "frida 类型: local | gadget")
+	flag.StringVar(&config.SendURL, "send_url", "http://127.0.0.1:36060/onebot", "发送消息的 URL: http://127.0.0.1:36060/onebot")
+	flag.StringVar(&config.ReceiveHost, "receive_host", "127.0.0.1:58080", "接收消息的地址: 127.0.0.1:36060")
+	flag.StringVar(&config.FridaGadgetAddr, "gadget_addr", "127.0.0.1:27042", "Gadget 地址: 127.0.0.1:27042 仅当 type 为 gadget 时有效")
+	flag.IntVar(&config.WechatPid, "wechat_pid", 0, "微信进程 ID: 58183, 仅当 type 为 local 时有效")
+	flag.StringVar(&config.OnebotToken, "token", "MuseBot", "OneBot Token: 123456")
+	
+	flag.Parse()
+	
+	fmt.Println("FridaType", config.FridaType)
+	fmt.Println("SendURL", config.SendURL)
+	fmt.Println("ReceiveHost", config.ReceiveHost)
+	fmt.Println("FridaGadgetAddr", config.FridaGadgetAddr)
+	fmt.Println("WechatPid", config.WechatPid)
+	fmt.Println("OnebotToken", config.OnebotToken)
+	
+}
+
 func initFridaGadget() {
 	mgr := frida.NewDeviceManager()
 	// 连接到 Gadget 默认端口
-	device, err := mgr.AddRemoteDevice("127.0.0.1:27042", frida.NewRemoteDeviceOptions())
+	device, err := mgr.AddRemoteDevice(config.FridaGadgetAddr, frida.NewRemoteDeviceOptions())
 	if err != nil {
-		log.Printf("❌ 无法连接 Gadget: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("❌ 无法连接 Gadget: %v\n", err)
 	}
 	
 	session, err = device.Attach("Gadget", nil)
 	if err != nil {
-		log.Printf("❌ 附加失败: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("❌ 附加失败: %v\n", err)
 	}
 	
 	loadJs()
@@ -79,8 +111,8 @@ func initFrida() {
 		log.Fatalf("无法获取本地设备: %v", err)
 	}
 	
-	log.Println("正在尝试 Attach 到微信...")
-	session, err = device.Attach(47516, nil)
+	fmt.Printf("正在尝试 Attach 到微信...")
+	session, err = device.Attach(config.WechatPid, nil)
 	if err != nil {
 		log.Fatalf("Attach 失败 (请检查 SIP 状态或权限): %v", err)
 	}
@@ -92,8 +124,7 @@ func loadJs() {
 	js, _ := os.ReadFile("./script.js")
 	script, err := session.CreateScript(string(js))
 	if err != nil {
-		log.Printf("❌ 创建脚本失败: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("❌ 创建脚本失败: %v\n", err)
 	}
 	
 	// 打印 JS 里的 console.log
@@ -126,12 +157,11 @@ func loadJs() {
 	})
 	
 	if err := script.Load(); err != nil {
-		log.Printf("❌ 加载脚本失败: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("❌ 加载脚本失败: %v\n", err)
 	}
 	
 	fridaScript = script
-	log.Println("✅ Frida 已就绪，微信控制通道已打通")
+	fmt.Printf("✅ Frida 已就绪，微信控制通道已打通")
 }
 
 func sendHandler(w http.ResponseWriter, r *http.Request) {
@@ -147,7 +177,7 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	// 参数校验
-	if len(req.Message) == 0 || req.UserID == "" {
+	if len(req.Message) == 0 || (req.UserID == "" && req.GroupID == "") {
 		http.Error(w, "参数缺失", http.StatusBadRequest)
 		return
 	}
@@ -161,6 +191,7 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 	
 	msgChan <- &SendMsg{
 		UserId:  req.UserID,
+		GroupID: req.GroupID,
 		Content: text,
 	}
 	
@@ -170,6 +201,13 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SendWorker() {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("💥 SendWorker 异常: %v\n", err)
+			go SendWorker()
+		}
+	}()
+	
 	for m := range msgChan {
 		currTaskId := atomic.AddInt64(&taskId, 1)
 		log.Printf("📩 收到任务: %d\n", currTaskId)
@@ -180,48 +218,51 @@ func SendWorker() {
 		// 必须在处理完后释放 context 资源
 		defer cancel()
 		
-		// 2. 使用 channel 接收 Frida 返回结果
-		resChan := make(chan interface{}, 1)
+		targetId := m.UserId
+		if m.GroupID != "" && targetId == "" {
+			targetId = m.GroupID
+		}
 		
-		go func() {
-			// 在子协程中执行阻塞的 Frida 调用
-			result := fridaScript.ExportsCall("manualTrigger", currTaskId, m.UserId, m.Content)
-			resChan <- result
-		}()
+		// 在子协程中执行阻塞的 Frida 调用
+		result := fridaScript.ExportsCall("manualTrigger", currTaskId, targetId, m.Content)
+		if result == nil {
+			log.Printf("📩 任务执行%s\n", result)
+		}
 		
-		// 3. 核心：通过 select 监听“完成”或“超时”
 		select {
-		case result := <-resChan:
-			log.Printf("✅ 任务 %d 执行成功: %v\n", currTaskId, result)
 		case <-ctx.Done():
 			// 此时已经过了 1 秒，resChan 还没收到数据
-			log.Printf("⏰ 任务 %d 执行超时！\n", currTaskId)
+			log.Printf("任务 %d 执行超时！\n", currTaskId)
 		case <-finishChan:
-			log.Printf("🛑 收到完成信号，任务 %d 完成\n", currTaskId)
+			log.Printf("收到完成信号，任务 %d 完成\n", currTaskId)
 		}
 	}
 }
 
 func main() {
-	initFrida()
+	initFlag()
+	if config.FridaType == "Gadget" {
+		initFridaGadget()
+	} else {
+		initFrida()
+	}
 	go SendWorker()
 	
 	http.HandleFunc("/send_private_msg", sendHandler)
+	http.HandleFunc("/send_group_msg", sendHandler)
 	
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	
 	go func() {
 		<-stop
-		log.Println("\n正在释放 Frida 资源并退出...")
-		os.Exit(0)
+		log.Fatalf("\n正在释放 Frida 资源并退出...")
 	}()
 	
 	// 3. 启动服务
-	port := ":58080"
-	log.Printf("🌐 HTTP 服务启动在 http://127.0.0.1%s\n", port)
-	if err := http.ListenAndServe(port, nil); err != nil {
-		log.Printf("❌ 服务启动失败: %v\n", err)
+	fmt.Printf("HTTP 服务启动在 %s", config.ReceiveHost)
+	if err := http.ListenAndServe(config.ReceiveHost, nil); err != nil {
+		log.Printf("服务启动失败: %v\n", err)
 	}
 	
 }
@@ -241,17 +282,17 @@ func SendHttpReq(msg map[string]interface{}) {
 		return
 	}
 	
-	log.Printf("发送数据: %s\n", string(jsonData))
+	fmt.Printf("发送数据: %s\n", string(jsonData))
 	
 	// 4. 创建 POST 请求
-	req, err := http.NewRequest("POST", "http://127.0.0.1:36060/onebot", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", config.SendURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		log.Printf("创建请求失败: %v\n", err)
 		return
 	}
 	
 	// 5. 设置 Header (OneBot 接口通常要求 application/json)
-	h := hmac.New(sha1.New, []byte("MuseBot"))
+	h := hmac.New(sha1.New, []byte(config.OnebotToken))
 	h.Write(jsonData)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Signature", "sha1="+hex.EncodeToString(h.Sum(nil)))
@@ -274,5 +315,5 @@ func SendHttpReq(msg map[string]interface{}) {
 		return
 	}
 	
-	log.Printf("状态码: %d 返回内容: %s\n", resp.StatusCode, string(body))
+	fmt.Printf("状态码: %d 返回内容: %s\n", resp.StatusCode, string(body))
 }
