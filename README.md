@@ -1,7 +1,17 @@
 # WeChat 4.0 Message hook
 本代码库中的所有代码、示例、文档及相关内容（以下简称“本项目”）仅供学习、研究和技术交流之目的使用。使用本项目所产生的任何风险（包括但不限于数据丢失、系统崩溃、安全问题、法律风险等）均由使用者自行承担。
 
-我hook的是微信三端最底层的发消息能力，这块代码是开源的，感兴趣google tencent/mars
+我hook的是微信三端最底层的发消息能力，这块代码是开源的，感兴趣google tencent/mars    
+怎么使用,如果你的mac已经关闭了SIP
+```
+frida -f /Applications/WeChat.app/Contents/MacOS/WeChat -l frida/succ.js
+manualTrigger(0x20000095, "wxid_xxxx", "hi")
+```
+
+没有关闭SIP，查看文件https://github.com/yincongcyincong/weixin-macos/blob/main/frida-gadget/readme.md，把每一步都执行完成，然后启动微信    
+```
+frida -U -n Gadget -l frida/succ.js
+```
 
 ![image](https://github.com/user-attachments/assets/401de4b8-5d10-48d9-8dcf-eecc8ae8682a)
 
