@@ -189,16 +189,31 @@ func loadJs() {
 			if p, ok := msg["payload"]; ok {
 				if pMap, ok := p.(map[string]interface{}); ok {
 					if t, ok := pMap["type"]; ok {
-						if t.(string) == "send" {
+						switch t.(string) {
+						case "send":
 							go SendHttpReq(msg)
-						} else if t.(string) == "finish" {
+						case "finish":
 							finishChan <- struct{}{}
-						} else if t.(string) == "upload" {
+						case "upload":
 							if selfId, ok := pMap["self_id"]; ok && myWechatId == "" {
 								fmt.Printf("✅ 检测到微信登录，当前账号: %s\n", selfId.(string))
 								myWechatId = selfId.(string)
 							}
+						case "upload_finish":
+							m := &SendMsg{
+								Type: "send_image",
+							}
+							if targetIdInter, ok := pMap["target_id"]; ok {
+								targetIdStr := targetIdInter.(string)
+								if strings.Contains(targetIdStr, "wxid_") {
+									m.UserId = targetIdStr
+								} else {
+									m.GroupID = targetIdStr
+								}
+							}
+							msgChan <- m
 						}
+						
 					}
 				}
 			}
@@ -286,7 +301,7 @@ func SendWechatMsg(m *SendMsg) {
 	currTaskId := atomic.AddInt64(&taskId, 1)
 	log.Printf("📩 收到任务: %d\n", currTaskId)
 	
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	
 	targetId := m.UserId
@@ -307,16 +322,9 @@ func SendWechatMsg(m *SendMsg) {
 		
 		result := fridaScript.ExportsCall("triggerUploadImg", targetId, md5Str, targetPath)
 		log.Printf("📩 上传图片任务执行结果%s, 参数：targetId: %s, md5Str: %s, targetPath: %s\n", result, targetId, md5Str, targetPath)
-		
-		select {
-		case <-ctx.Done():
-			log.Printf("上传图片任务 %d 执行超时！\n", currTaskId)
-		case <-finishChan:
-			log.Printf("收到上传图片完成信号，任务 %d 完成\n", currTaskId)
-		}
-		
-		result = fridaScript.ExportsCall("triggerSendImgMessage", currTaskId, myWechatId, targetId)
-		log.Printf("📩 发送图片任务执行%s, 参数：currTaskId: %d, myWechatId: %s, targetId: %s\n", result, currTaskId, myWechatId, targetId)
+	case "send_image":
+		result := fridaScript.ExportsCall("triggerSendImgMessage", currTaskId, myWechatId, targetId)
+		log.Printf("📩 发送图片任务执行结果%s, 参数：currTaskId: %d, myWechatId: %s, targetId: %s\n", result, currTaskId, myWechatId, targetId)
 	}
 	
 	select {

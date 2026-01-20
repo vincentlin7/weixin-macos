@@ -1046,11 +1046,20 @@ function patchCdnOnComplete() {
                 globalImageCdnKey = x2.add(0x60).readPointer().readUtf8String();
                 globalAesKey1 = x2.add(0x78).readPointer().readUtf8String();
                 globalMd5Key = x2.add(0x90).readPointer().readUtf8String();
+                const targetId = x2.add(0x40).readUtf8String();
                 console.log("[+] globalImageCdnKey: " + globalImageCdnKey + " globalAesKey1: " + globalAesKey1 +
-                    " globalAesKey2: " + globalMd5Key);
+                    " globalMd5Key: " + globalMd5Key);
                 send({
                     type: "finish",
                 })
+
+                if (globalImageCdnKey !== "" && globalImageCdnKey != null && globalAesKey1 !== "" && globalAesKey1 != null &&
+                    globalMd5Key !== "" && globalMd5Key != null) {
+                    send({
+                        type: "upload_finish",
+                        target_id: targetId,
+                    })
+                }
             } catch (e) {
                 console.log("[-] Memory access error at onEnter: " + e);
             }
