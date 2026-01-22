@@ -265,6 +265,7 @@ var receiverGlobal = "wxid_"
 var contentGlobal = "";
 var senderGlobal = "wxid_"
 var lastSendTime = 0;
+const imageCp = generateBytes(16) // m30c4674f5a0b9d
 
 // -------------------------全局变量分区-------------------------
 
@@ -761,14 +762,11 @@ function attachProto() {
             const type = [0x0A, 0x40, 0x0A, 0x01, 0x00]
             const msgId = [0x10].concat(generateRandom5ByteVarint())
             const cpHeader = [0x1A, 0x10]
-            // m30c4674f5a0b9d
-            const cp = generateBytes(16)
 
             const randomId = [0x20, 0xAF, 0xAC, 0x90, 0x93, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01]
             const sysHeader = [0x2A, 0x15]
             // UnifiedPCMac 26 arm64
             const sys = [0x55, 0x6E, 0x69, 0x66, 0x69, 0x65, 0x64, 0x50, 0x43, 0x4D, 0x61, 0x63, 0x20, 0x32, 0x36, 0x20, 0x61, 0x72, 0x6D, 0x36, 0x34, 0x30]
-
 
             // 45872025384@chatroom_176787000_60_xwechat_1 只需要改这个时间戳就能重复发送
             const receiverMsgId = stringToHexArray(receiverGlobal).concat([0x5F])
@@ -832,7 +830,7 @@ function attachProto() {
                 0xC8, 0x02, 0x00, 0x00 // 0x3E8
             ]
 
-            const finalPayload = type.concat(msgId, cpHeader, cp, randomId, sysHeader, sys, msgIdHeader, receiverMsgId,
+            const finalPayload = type.concat(msgId, cpHeader, imageCp, randomId, sysHeader, sys, msgIdHeader, receiverMsgId,
                 senderHeader, sender, receiverHeader, receiver, randomId1, type1, randomId2, randomId3, randomId4, htmlHeader, html,
                 cdnHeader, cdn, cdn2Header, cdn2, aesKeyHeader, aesKey, randomId5, cdn3Header, cdn3, randomId6, randomId7, randomId8,
                 aesKey1Header, aesKey1, md5Header, me5Key, randomId9, left0)
