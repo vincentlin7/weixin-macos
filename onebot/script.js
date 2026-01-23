@@ -83,7 +83,7 @@ function generateAESKey() {
 }
 
 function getProtobufRawBytes(pBuffer, scanSize) {
-    const tags = [0x12, 0x1A, 0x2A, 0x52];
+    const tags = [0x12, 0x1A, 0x2A, 0x52, 0x5A];
     let uint8Array;
 
     try {
@@ -176,8 +176,7 @@ function getCleanString(uint8Array) {
                     out += String.fromCharCode(charCode);
                 }
             }
-        }
-        else if ((c & 0xF8) === 0xF0 && i + 2 < len) {
+        } else if ((c & 0xF8) === 0xF0 && i + 2 < len) {
             var c2 = uint8Array[i++];
             var c3 = uint8Array[i++];
             var c4 = uint8Array[i++];
@@ -265,6 +264,8 @@ var receiverGlobal = "wxid_"
 var contentGlobal = "";
 var senderGlobal = "wxid_"
 var lastSendTime = 0;
+var atUserGlobal = "";
+
 const imageCp = generateBytes(16) // m30c4674f5a0b9d
 
 // -------------------------全局变量分区-------------------------
@@ -343,7 +344,7 @@ setTimeout(function () {
     patchTextProtoBuf();
 }, 3000);
 
-function triggerSendTextMessage(taskId, receiver, content) {
+function triggerSendTextMessage(taskId, receiver, content, atUser) {
     console.log("[+] Manual Trigger Started...");
     if (!taskId || !receiver || !content) {
         console.error("[!] taskId or Receiver or Content is empty!");
@@ -356,11 +357,11 @@ function triggerSendTextMessage(taskId, receiver, content) {
     taskIdGlobal = taskId;
     receiverGlobal = receiver;
     contentGlobal = content;
+    atUserGlobal = atUser
+    console.log("taskIdGlobal: " + taskIdGlobal + ", receiverGlobal: " + receiverGlobal + ", contentGlobal: " + contentGlobal + ", atUserGlobal: " + atUserGlobal) ;
 
     textMessageAddr.add(0x08).writeU32(taskIdGlobal);
     sendTextMessageAddr.add(0x20).writeU32(taskIdGlobal);
-
-    console.log("start init payload")
 
     const payloadData = [
         0x0A, 0x02, 0x00, 0x00,                         // 0x00
@@ -428,9 +429,8 @@ function triggerSendTextMessage(taskId, receiver, content) {
     try {
         // const arg1 = globalMessagePtr; // 第一个指针参数
         const arg2 = triggerX1Payload; // 第二个参数 0x175ED6600
-        console.log(`[+] Calling MMStartTask  at ${sendFuncAddr} with args: (${arg2})`);
         const result = MMStartTask(arg2);
-        console.log("[+] Execution MMStartTask  Success. Return value: " + result);
+        console.log(`[+] Execution MMStartTask ${sendFuncAddr} with args: (${arg2})  Success. Return value: ` + result);
         return "ok";
     } catch (e) {
         console.error("[!] Error trigger function  during execution: " + e);
@@ -454,7 +454,7 @@ function attachSendTextProto() {
                 console.log("[+] Protobuf 拦截未命中，跳过...");
                 return;
             }
-            console.log("[+] 正在注入 Protobuf Payload...");
+            console.log(`[+] 正在注入 Protobuf Payload content: ${contentGlobal}, receiver: ${receiverGlobal}, atUser: ${atUserGlobal}`);
 
             const type = [0x08, 0x01, 0x12]
             const receiverHeader = [0x0A, receiverGlobal.length + 2, 0x0A, receiverGlobal.length];
@@ -466,27 +466,32 @@ function attachSendTextProto() {
             const msgIdHeader = [0x28]
             const msgId = generateRandom5ByteVarint()
 
-            const suffix = [
-                0x32, 0x32, 0x3C,                               // 0x28 头部
-                0x6D, 0x73, 0x67, 0x73, 0x6F, 0x75, 0x72, // 0x30 msgsour
-                0x63, 0x65, 0x3E, 0x3C, 0x61, 0x6C, 0x6E, 0x6F, // 0x38 ce><alno
-                0x64, 0x65, 0x3E, 0x3C, 0x66, 0x72, 0x3E, 0x31, // 0x40 de><fr>1
-                0x3C, 0x2F, 0x66, 0x72, 0x3E, 0x3C, 0x2F, 0x61, // 0x48 </fr></a
-                0x6C, 0x6E, 0x6F, 0x64, 0x65, 0x3E, 0x3C, 0x2F, // 0x50 lnode></
-                0x6D, 0x73, 0x67, 0x73, 0x6F, 0x75, 0x72, // 0x58 msgsour
-                0x63, 0x65, 0x3E, 0x00                          // 0x60 ce>.
-            ];
+            const htmlUpperPart = [0x3C, 0x6D, 0x73, 0x67, 0x73, 0x6F, 0x75, 0x72, 0x63, 0x65, 0x3E]
+            let atUserHeader = []
+            if (atUserGlobal) {
+                atUserHeader = atUserHeader.concat([0x3C, 0x61, 0x74, 0x75, 0x73, 0x65, 0x72, 0x6c, 0x69, 0x73, 0x74, 0x3e]).
+                concat(stringToHexArray(atUserGlobal)).concat([0x3C, 0x2F, 0x61, 0x74, 0x75, 0x73, 0x65, 0x72, 0x6C, 0x69, 0x73, 0x74, 0x3E])
+            }
+            const htmlLowerPart = [0x3C, 0x61, 0x6C, 0x6E, 0x6F,
+                0x64, 0x65, 0x3E, 0x3C, 0x66, 0x72, 0x3E, 0x31,
+                0x3C, 0x2F, 0x66, 0x72, 0x3E, 0x3C, 0x2F, 0x61,
+                0x6C, 0x6E, 0x6F, 0x64, 0x65, 0x3E, 0x3C, 0x2F,
+                0x6D, 0x73, 0x67, 0x73, 0x6F, 0x75, 0x72,
+                0x63, 0x65, 0x3E, 0x00]
+
+            const htmlHeader = [0x32, htmlUpperPart.length + atUserHeader.length + htmlLowerPart.length]
+
 
             const valueLen = toVarint(receiverHeader.length + receiverProto.length + contentHeader.length +
-                contentProto.length + tsHeader.length + tsBytes.length + msgIdHeader.length + msgId.length + suffix.length)
+                contentProto.length + tsHeader.length + tsBytes.length + msgIdHeader.length + msgId.length + htmlHeader.length +
+                htmlUpperPart.length + atUserHeader.length + htmlLowerPart.length)
 
             // 合并数组
-            const finalPayload = type.concat(valueLen).concat(receiverHeader).concat(receiverProto).concat(contentHeader).concat(contentProto).concat(tsHeader).concat(tsBytes).concat(msgIdHeader).concat(msgId).concat(suffix);
+            const finalPayload = type.concat(valueLen).concat(receiverHeader).concat(receiverProto).concat(contentHeader).
+            concat(contentProto).concat(tsHeader).concat(tsBytes).concat(msgIdHeader).concat(msgId).concat(htmlHeader).concat(htmlUpperPart).
+            concat(atUserHeader).concat(htmlLowerPart);
 
-            console.log("[+] Payload 准备写入");
             textProtoX1PayloadAddr.writeByteArray(finalPayload);
-            console.log("[+] Payload 已写入，长度: " + finalPayload.length);
-
             this.context.x1 = textProtoX1PayloadAddr;
             this.context.x2 = ptr(finalPayload.length);
 
@@ -554,6 +559,7 @@ function attachReq2buf() {
             receiverGlobal = "";
             senderGlobal = "";
             contentGlobal = "";
+            atUserGlobal = "";
             send({
                 type: "finish",
             })
@@ -1053,10 +1059,11 @@ function setReceiver() {
             const receiver = fields[1]
             const content = fields[2]
             const xml = fields[3]
+            const userContent = fields[4]
 
             if (sender === "" || receiver === "" || content === "" || xml === "") {
                 console.log("字段缺失，无法解析 sender:" + sender + " receiver:" + receiver + hexdump(currentPtr, {
-                    length: 128,
+                    length: x2,
                     header: true,
                     ansi: true,
                 }))
@@ -1068,35 +1075,26 @@ function setReceiver() {
             var groupId = ""
             var senderUser = sender
             var messages = [];
-            messages.push({type: "text", data: {text: content}});
+            var senderNickname = ""
+
+            let splitIndex = content.indexOf(':')
+            let pureContent = content.substring(splitIndex + 1).trim();
 
             if (sender.includes("@chatroom")) {
                 msgType = "group"
                 groupId = sender
-                let splitIndex = -1;
-                for (let i = 0; i < content.length; i++) {
-                    if (content[i] === ':') {
-                        splitIndex = i;
-                        break;
+
+                senderUser = content.substring(0, splitIndex).trim();
+                const parts = pureContent.split('\u2005');
+                for (let part of parts) {
+                    part = part.trim();
+                    if (!part.startsWith("@")) {
+                        messages.push({type: "text", data: {text: part}});
                     }
                 }
 
                 const sendUserStart = content.indexOf('wxid_')
                 senderUser = content.substring(sendUserStart, splitIndex).trim();
-
-                messages = [];
-                const parts = content.split('\u2005');
-                for (let part of parts) {
-                    part = part.trim();
-                    if (!part.startsWith("@")) {
-                        if (part.indexOf(":") !== -1) {
-                            messages.push({type: "text", data: {text: part.substring(part.indexOf(':') + 1)}});
-                        } else {
-                            messages.push({type: "text", data: {text: part}});
-                        }
-
-                    }
-                }
 
                 const atUserMatch = xml.match(/<atuserlist>([\s\S]*?)<\/atuserlist>/);
                 const atUser = atUserMatch ? atUserMatch[1] : null;
@@ -1108,6 +1106,21 @@ function setReceiver() {
                         }
                     });
                 }
+
+                // 处理用户的名称
+                splitIndex = userContent.indexOf(':')
+                if (splitIndex === -1) {
+                    splitIndex = userContent.indexOf('在群聊中@了你')
+                    senderNickname = userContent.substring(0, splitIndex).trim();
+                } else {
+                    senderNickname = userContent.substring(0, splitIndex).trim();
+                }
+
+            } else {
+                // 处理用户的名称
+                const splitIndex = userContent.indexOf(':')
+                senderNickname = userContent.substring(0, splitIndex).trim();
+                messages.push({type: "text", data: {text: pureContent}});
             }
 
             const msgId = generateAESKey()
@@ -1119,7 +1132,8 @@ function setReceiver() {
                 message_id: msgId,
                 type: "send",
                 raw: {peerUid: msgId},
-                message: messages
+                message: messages,
+                sender: {user_id: senderUser, nickname: senderNickname},
             })
         },
     });

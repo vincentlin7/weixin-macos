@@ -19,6 +19,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"text/template"
@@ -38,12 +39,20 @@ var (
 	finishChan = make(chan struct{})
 	
 	config = &Config{}
+	
+	userID2NicknameMap sync.Map
 )
 
 type WechatMessage struct {
-	GroupId string `json:"group_id"`
-	SelfID  string `json:"self_id"`
-	UserID  string `json:"user_id"`
+	GroupId string  `json:"group_id"`
+	SelfID  string  `json:"self_id"`
+	UserID  string  `json:"user_id"`
+	Sender  *Sender `json:"sender"`
+}
+
+type Sender struct {
+	UserID   string `json:"user_id"`
+	Nickname string `json:"nickname"`
 }
 
 type SendMsg struct {
@@ -51,6 +60,7 @@ type SendMsg struct {
 	GroupID string
 	Content string
 	Type    string
+	AtUser  string
 }
 
 // SendRequest 请求结构体
@@ -69,6 +79,7 @@ type SendRequestData struct {
 	Id   string `json:"id"`
 	Text string `json:"text"`
 	File string `json:"file"`
+	QQ   string `json:"qq"`
 }
 
 type Config struct {
@@ -251,14 +262,19 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
+	sendContent := ""
+	atUserID := ""
 	for _, v := range req.Message {
 		if v.Type == "text" {
-			msgChan <- &SendMsg{
-				UserId:  req.UserID,
-				GroupID: req.GroupID,
-				Content: v.Data.Text,
-				Type:    v.Type,
+			sendContent += v.Data.Text
+		} else if v.Type == "at" {
+			if req.GroupID != "" {
+				if nicknameInter, ok := userID2NicknameMap.Load(req.GroupID + "_" + v.Data.QQ); ok {
+					sendContent += fmt.Sprintf("@%s\u2005", nicknameInter.(string))
+					atUserID += v.Data.QQ + ","
+				}
 			}
+			
 		} else if v.Type == "image" {
 			msgChan <- &SendMsg{
 				UserId:  req.UserID,
@@ -266,6 +282,16 @@ func sendHandler(w http.ResponseWriter, r *http.Request) {
 				Content: v.Data.File,
 				Type:    v.Type,
 			}
+		}
+	}
+	
+	if sendContent != "" {
+		msgChan <- &SendMsg{
+			UserId:  req.UserID,
+			GroupID: req.GroupID,
+			Content: sendContent,
+			Type:    "text",
+			AtUser:  strings.TrimRight(atUserID, ","),
 		}
 	}
 	
@@ -310,8 +336,9 @@ func SendWechatMsg(m *SendMsg) {
 	
 	switch m.Type {
 	case "text":
-		result := fridaScript.ExportsCall("triggerSendTextMessage", currTaskId, targetId, m.Content)
-		log.Printf("📩 发送文本任务执行结果：%s\n", result)
+		result := fridaScript.ExportsCall("triggerSendTextMessage", currTaskId, targetId, m.Content, m.AtUser)
+		log.Printf("📩 发送文本任务执行结果：%s, 参数：currTaskId: %d, targetId: %s, content: %s, atUser: %s\n",
+			result, currTaskId, targetId, m.Content, m.AtUser)
 	case "image":
 		targetPath, md5Str, err := SaveBase64Image(m.Content)
 		if err != nil {
@@ -386,6 +413,10 @@ func SendHttpReq(msg map[string]interface{}) {
 			return
 		}
 		myWechatId = m.SelfID
+		
+		if m.GroupId != "" {
+			userID2NicknameMap.Store(m.GroupId+"_"+m.UserID, m.Sender.Nickname)
+		}
 	}
 	
 	// 4. 创建 POST 请求

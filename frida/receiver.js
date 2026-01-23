@@ -30,6 +30,7 @@ function setReceiver() {
             const receiver = fields[1]
             const content = fields[2]
             const xml = fields[3]
+            const userContent = fields[4]
 
             if (sender === "" || receiver === "" || content === "" || xml === "") {
                 console.log("字段缺失，无法解析 sender:" + sender + " receiver:" + receiver + hexdump(currentPtr, {
@@ -45,23 +46,17 @@ function setReceiver() {
             var groupId = ""
             var senderUser = sender
             var messages = [];
-            messages.push({type: "text", data: {text: content}});
+            var senderNickname = ""
+
+            let splitIndex = content.indexOf(':')
+            let pureContent = content.substring(splitIndex + 1).trim();
 
             if (sender.includes("@chatroom")) {
                 msgType = "group"
                 groupId = sender
-                let splitIndex = -1;
-                for (let i = 0; i < content.length; i++) {
-                    if (content[i] === ':') {
-                        splitIndex = i;
-                        break;
-                    }
-                }
 
                 senderUser = content.substring(0, splitIndex).trim();
-
-                messages = [];
-                const parts = content.split('\u2005');
+                const parts = pureContent.split('\u2005');
                 for (let part of parts) {
                     part = part.trim();
                     if (!part.startsWith("@")) {
@@ -69,11 +64,34 @@ function setReceiver() {
                     }
                 }
 
+                const sendUserStart = content.indexOf('wxid_')
+                senderUser = content.substring(sendUserStart, splitIndex).trim();
+
                 const atUserMatch = xml.match(/<atuserlist>([\s\S]*?)<\/atuserlist>/);
                 const atUser = atUserMatch ? atUserMatch[1] : null;
                 if (atUser) {
-                    messages.push({type: "at", data: {qq: atUser}});
+                    atUser.split(',').forEach(atUser => {
+                        atUser = atUser.trim();
+                        if (atUser) {
+                            messages.push({type: "at", data: {qq: atUser}});
+                        }
+                    });
                 }
+
+                // 处理用户的名称
+                splitIndex = userContent.indexOf(':')
+                if (splitIndex === -1) {
+                    splitIndex = userContent.indexOf('在群聊中@了你')
+                    senderNickname = userContent.substring(0, splitIndex).trim();
+                } else {
+                    senderNickname = userContent.substring(0, splitIndex).trim();
+                }
+
+            } else {
+                // 处理用户的名称
+                const splitIndex = userContent.indexOf(':')
+                senderNickname = userContent.substring(0, splitIndex).trim();
+                messages.push({type: "text", data: {text: pureContent}});
             }
 
             const msgId = generateAESKey()
@@ -85,7 +103,8 @@ function setReceiver() {
                 message_id: msgId,
                 type: "send",
                 raw: {peerUid: msgId},
-                message: messages
+                message: messages,
+                sender: {user_id: senderUser, nickname: senderNickname},
             })
         },
     });
@@ -105,7 +124,7 @@ function generateAESKey() {
 
 
 function getProtobufRawBytes(pBuffer, scanSize) {
-    const tags = [0x12, 0x1A, 0x2A, 0x52];
+    const tags = [0x12, 0x1A, 0x2A, 0x52, 0x5A];
     let uint8Array;
 
     try {
