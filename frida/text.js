@@ -72,31 +72,31 @@ function patchString(addr, plainStr) {
     addr.writeByteArray(bytes);
     addr.add(bytes.length).writeU8(0);
 }
+
 // -------------------------基础函数分区-------------------------
 
 // -------------------------全局变量分区-------------------------
 
 // 文本消息全局变量
-var sendTextFuncAddr = baseAddr.add(0x448A858); // 这个必须是绝对位置
-var protobufAddr = baseAddr.add(0x227EC70);
-var patchTextProtobufAddr = baseAddr.add(0x227EC4C);
-var PatchTextProtobufDeleteAddr = baseAddr.add(0x227EC88);
+var protobufAddr = baseAddr.add(0x2387280);
+var patchTextProtobufAddr = baseAddr.add(0x238725C);
+var PatchTextProtobufDeleteAddr = baseAddr.add(0x2387298);
 var textCgiAddr = ptr(0);
 var sendTextMessageAddr = ptr(0);
 var textMessageAddr = ptr(0);
-var contentAddr = ptr(0);
-var insertTextMsgAddr = ptr(0);
 var textProtoX1PayloadAddr = ptr(0);
 var sendMessageCallbackFunc = ptr(0);
-var messageCallbackFunc1 = baseAddr.add(0x7fa1050);
+var messageCallbackFunc1 = baseAddr.add(0x865DBB8);
 
 
-// req2buf全局变量
-var triggerX1Payload = ptr(0x175ED6600);
-var req2bufEnterAddr = baseAddr.add(0x34566C0);
-var req2bufExitAddr = baseAddr.add(0x34577D8);
-
-// 图片消息全局变量
+// 双方公共使用的地址
+var triggerX1Payload;
+var triggerX0;
+var req2bufEnterAddr = baseAddr.add(0x35CEDBC);
+var req2bufExitAddr = baseAddr.add(0x35CFF94);
+var sendFuncAddr = baseAddr.add(0x4A49BC4);
+var insertMsgAddr = ptr(0);
+var sendMsgType = "";
 
 
 // 发送消息的全局变量
@@ -105,13 +105,12 @@ var receiverGlobal = "wxid_"
 var contentGlobal = "";
 var senderGlobal = "wxid_"
 var lastSendTime = 0;
+var atUserGlobal = "";
 
 // -------------------------全局变量分区-------------------------
 
 
 // -------------------------发送文本消息分区-------------------------
-
-
 // 初始化进行内存的分配
 function setupSendTextMessageDynamic() {
     console.log("[+] Starting Dynamic Message Patching...");
@@ -121,11 +120,9 @@ function setupSendTextMessageDynamic() {
     textCgiAddr = Memory.alloc(128);
     sendTextMessageAddr = Memory.alloc(256);
     textMessageAddr = Memory.alloc(256);
-    contentAddr = Memory.alloc(16);
 
     // A. 写入字符串内容
     patchString(textCgiAddr, "/cgi-bin/micromsg-bin/newsendmsg");
-    patchString(contentAddr, " ");
 
     // B. 构建 sendTextMessageAddr 结构体 (X24 基址位置)
     sendTextMessageAddr.add(0x00).writeU64(0);
@@ -170,7 +167,7 @@ function patchTextProtoBuf() {
         cw.flush();
     });
 
-    console.log("[+] Patching BL to NOP at " + patchTextProtobufAddr + " completed.");
+    console.log("[+] Patching patchTextProtobufAddr " + patchTextProtobufAddr + " 成功.");
 
     Memory.patchCode(PatchTextProtobufDeleteAddr, 4, code => {
         const cw = new Arm64Writer(code, {pc: PatchTextProtobufDeleteAddr});
@@ -178,12 +175,15 @@ function patchTextProtoBuf() {
         cw.flush();
     });
 
-    console.log("[+] Patching BL DELETE to NOP at " + PatchTextProtobufDeleteAddr + " completed.");
+    console.log("[+] Patching PatchTextProtobufDeleteAddr " + PatchTextProtobufDeleteAddr + " 成功.");
 }
 
-setImmediate(patchTextProtoBuf);
+setTimeout(function () {
+    console.log("[+] 3秒等待结束，准备执行 Patch...");
+    patchTextProtoBuf();
+}, 3000);
 
-function triggerSendTextMessage(taskId, receiver, content) {
+function triggerSendTextMessage(taskId, receiver, content, atUser) {
     console.log("[+] Manual Trigger Started...");
     if (!taskId || !receiver || !content) {
         console.error("[!] taskId or Receiver or Content is empty!");
@@ -196,16 +196,16 @@ function triggerSendTextMessage(taskId, receiver, content) {
     taskIdGlobal = taskId;
     receiverGlobal = receiver;
     contentGlobal = content;
+    atUserGlobal = atUser
+    console.log("taskIdGlobal: " + taskIdGlobal + ", receiverGlobal: " + receiverGlobal + ", contentGlobal: " + contentGlobal + ", atUserGlobal: " + atUserGlobal) ;
 
     textMessageAddr.add(0x08).writeU32(taskIdGlobal);
     sendTextMessageAddr.add(0x20).writeU32(taskIdGlobal);
 
-    console.log("start init payload")
-
     const payloadData = [
         0x0A, 0x02, 0x00, 0x00,                         // 0x00
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x08
-        0x03, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, // 0x10
+        0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, // 0x10
         0x40, 0xec, 0x0e, 0x12, 0x01, 0x00, 0x00, 0x00, // 0x18
         0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x20
         0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, // 0x28
@@ -226,7 +226,7 @@ function triggerSendTextMessage(taskId, receiver, content) {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xA0
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xA8
         0x00, 0x00, 0x00, 0x00, 0xAA, 0xAA, 0xAA, 0xAA, // 0xB0
-        0xC0, 0x66, 0xED, 0x75, 0x01, 0x00, 0x00, 0x00, // 0xB8
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xB8
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xC0
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xC8
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xD0
@@ -243,6 +243,7 @@ function triggerSendTextMessage(taskId, receiver, content) {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x128
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x130
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x138
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x138
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x140
         0x01, 0x00, 0x00, 0x00, 0xAA, 0xAA, 0xAA, 0xAA, // 0x148
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x150
@@ -253,32 +254,45 @@ function triggerSendTextMessage(taskId, receiver, content) {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x178
         0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x180
         0x00, 0x00, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, // 0x188
-        0x98, 0x67, 0xED, 0x75, 0x01, 0x00, 0x00, 0x00, // 0x190
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x190
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x198
     ];
-
-    // 从 0x175ED6604 开始写入 Payload
     triggerX1Payload.writeU32(taskIdGlobal);
     triggerX1Payload.add(0x04).writeByteArray(payloadData);
     triggerX1Payload.add(0x18).writePointer(textCgiAddr);
+    triggerX1Payload.add(0xb8).writePointer(triggerX1Payload.add(0xc0));
+    triggerX1Payload.add(0x190).writePointer(triggerX1Payload.add(0x198));
+    sendMsgType = "text"
 
     console.log("finished init payload")
-
-    const MMStartTask = new NativeFunction(sendTextFuncAddr, 'int64', ['pointer']);
+    const MMStartTask = new NativeFunction(sendFuncAddr, 'int64', ['pointer', 'pointer']);
 
     // 5. 调用函数
     try {
-        // const arg1 = globalMessagePtr; // 第一个指针参数
-        const arg2 = triggerX1Payload; // 第二个参数 0x175ED6600
-        console.log(`[+] Calling MMStartTask  at ${sendTextFuncAddr} with args: (${arg2})`);
-        const result = MMStartTask(arg2);
-        console.log("[+] Execution MMStartTask  Success. Return value: " + result);
+        const result = MMStartTask(triggerX0, triggerX1Payload);
+        console.log(`[+] Execution MMStartTask ${sendFuncAddr} with args: (${triggerX0}) (${triggerX1Payload})  Success. Return value: ` + result);
         return "ok";
     } catch (e) {
-        console.error("[!] Error trigger function  during execution: " + e);
+        console.error(`[!] Error trigger  MMStartTask ${sendFuncAddr} with args: (${triggerX0}) (${triggerX1Payload}),   during execution: ` + e);
         return "fail";
     }
 }
+
+function AttachSendTextProto() {
+    Interceptor.attach(sendFuncAddr, {
+        onEnter: function (args) {
+            if (triggerX1Payload) {
+                return
+            }
+
+            triggerX0 = this.context.x0;
+            triggerX1Payload = this.context.x1;
+            console.log(`[+] 捕获到 MMStartTask 调用，X0地址：${triggerX0}, Payload 地址: ${triggerX1Payload}`);
+        }
+    })
+}
+
+setImmediate(AttachSendTextProto);
 
 // 拦截 SendTextProto 编码逻辑，注入自定义 Payload
 function attachSendTextProto() {
@@ -296,7 +310,7 @@ function attachSendTextProto() {
                 console.log("[+] Protobuf 拦截未命中，跳过...");
                 return;
             }
-            console.log("[+] 正在注入 Protobuf Payload...");
+            console.log(`[+] 正在注入 Protobuf Payload content: ${contentGlobal}, receiver: ${receiverGlobal}, atUser: ${atUserGlobal}`);
 
             const type = [0x08, 0x01, 0x12]
             const receiverHeader = [0x0A, receiverGlobal.length + 2, 0x0A, receiverGlobal.length];
@@ -308,27 +322,32 @@ function attachSendTextProto() {
             const msgIdHeader = [0x28]
             const msgId = generateRandom5ByteVarint()
 
-            const suffix = [
-                0x32, 0x32, 0x3C,                               // 0x28 头部
-                0x6D, 0x73, 0x67, 0x73, 0x6F, 0x75, 0x72, // 0x30 msgsour
-                0x63, 0x65, 0x3E, 0x3C, 0x61, 0x6C, 0x6E, 0x6F, // 0x38 ce><alno
-                0x64, 0x65, 0x3E, 0x3C, 0x66, 0x72, 0x3E, 0x31, // 0x40 de><fr>1
-                0x3C, 0x2F, 0x66, 0x72, 0x3E, 0x3C, 0x2F, 0x61, // 0x48 </fr></a
-                0x6C, 0x6E, 0x6F, 0x64, 0x65, 0x3E, 0x3C, 0x2F, // 0x50 lnode></
-                0x6D, 0x73, 0x67, 0x73, 0x6F, 0x75, 0x72, // 0x58 msgsour
-                0x63, 0x65, 0x3E, 0x00                          // 0x60 ce>.
-            ];
+            const htmlUpperPart = [0x3C, 0x6D, 0x73, 0x67, 0x73, 0x6F, 0x75, 0x72, 0x63, 0x65, 0x3E]
+            let atUserHeader = []
+            if (atUserGlobal) {
+                atUserHeader = atUserHeader.concat([0x3C, 0x61, 0x74, 0x75, 0x73, 0x65, 0x72, 0x6c, 0x69, 0x73, 0x74, 0x3e]).
+                concat(stringToHexArray(atUserGlobal)).concat([0x3C, 0x2F, 0x61, 0x74, 0x75, 0x73, 0x65, 0x72, 0x6C, 0x69, 0x73, 0x74, 0x3E])
+            }
+            const htmlLowerPart = [0x3C, 0x61, 0x6C, 0x6E, 0x6F,
+                0x64, 0x65, 0x3E, 0x3C, 0x66, 0x72, 0x3E, 0x31,
+                0x3C, 0x2F, 0x66, 0x72, 0x3E, 0x3C, 0x2F, 0x61,
+                0x6C, 0x6E, 0x6F, 0x64, 0x65, 0x3E, 0x3C, 0x2F,
+                0x6D, 0x73, 0x67, 0x73, 0x6F, 0x75, 0x72,
+                0x63, 0x65, 0x3E, 0x00]
+
+            const htmlHeader = [0x32, htmlUpperPart.length + atUserHeader.length + htmlLowerPart.length]
+
 
             const valueLen = toVarint(receiverHeader.length + receiverProto.length + contentHeader.length +
-                contentProto.length + tsHeader.length + tsBytes.length + msgIdHeader.length + msgId.length + suffix.length)
+                contentProto.length + tsHeader.length + tsBytes.length + msgIdHeader.length + msgId.length + htmlHeader.length +
+                htmlUpperPart.length + atUserHeader.length + htmlLowerPart.length)
 
             // 合并数组
-            const finalPayload = type.concat(valueLen).concat(receiverHeader).concat(receiverProto).concat(contentHeader).concat(contentProto).concat(tsHeader).concat(tsBytes).concat(msgIdHeader).concat(msgId).concat(suffix);
+            const finalPayload = type.concat(valueLen).concat(receiverHeader).concat(receiverProto).concat(contentHeader).
+            concat(contentProto).concat(tsHeader).concat(tsBytes).concat(msgIdHeader).concat(msgId).concat(htmlHeader).concat(htmlUpperPart).
+            concat(atUserHeader).concat(htmlLowerPart);
 
-            console.log("[+] Payload 准备写入");
             textProtoX1PayloadAddr.writeByteArray(finalPayload);
-            console.log("[+] Payload 已写入，长度: " + finalPayload.length);
-
             this.context.x1 = textProtoX1PayloadAddr;
             this.context.x2 = ptr(finalPayload.length);
 
@@ -344,13 +363,7 @@ function attachSendTextProto() {
 
 setImmediate(attachSendTextProto);
 
-
-rpc.exports = {
-    triggerSendTextMessage: triggerSendTextMessage
-};
-
 // -------------------------发送文本消息分区-------------------------
-
 
 
 // -------------------------Req2Buf公共部分分区-------------------------
@@ -368,34 +381,39 @@ function attachReq2buf() {
 
             // 3. 获取 X24 寄存器的值
             const x24_base = this.context.x24;
-            insertTextMsgAddr = x24_base.add(0x60);
+            insertMsgAddr = x24_base.add(0x60);
             console.log("[+] 当前 Req2Buf X24 基址: " + x24_base);
 
-
-            // todo 修改为判断是发送图片还是文本
             if (typeof sendTextMessageAddr !== 'undefined') {
-                insertTextMsgAddr.writePointer(sendTextMessageAddr);
-                console.log("[+] 成功! Req2Buf 已将 X24+0x60 指向新地址: " + sendTextMessageAddr +
-                    "[+] Req2Buf 写入后内存预览: " + insertTextMsgAddr);
+                if (sendMsgType === "text") {
+                    insertMsgAddr.writePointer(sendTextMessageAddr);
+                    console.log("[+] 发送文本消息成功! Req2Buf 已将 X24+0x60 指向新地址: " + sendTextMessageAddr +
+                        "[+] Req2Buf 写入后内存预览: " + insertMsgAddr);
+                } else if (sendMsgType === "img") {
+                    insertMsgAddr.writePointer(sendImgMessageAddr);
+                    console.log("[+] 发送图片消息成功! Req2Buf 已将 X24+0x60 指向新地址: " + sendImgMessageAddr +
+                        "[+] Req2Buf 写入后内存预览: " + insertMsgAddr);
+                }
             } else {
                 console.error("[!] 错误: 变量 sendTextMessageAddr 未定义，请确保已运行分配逻辑。");
             }
         }
     });
 
-    // 在出口处拦截req2buf，把insertTextMsgAddr设置为0，避免被垃圾回收导致整个程序崩溃
+    // 在出口处拦截req2buf，把insertMsgAddr设置为0，避免被垃圾回收导致整个程序崩溃
     console.log("[+] Target Req2buf leave Address: " + req2bufExitAddr);
     Interceptor.attach(req2bufExitAddr, {
         onEnter: function (args) {
             if (!this.context.x25.equals(taskIdGlobal)) {
                 return;
             }
-            insertTextMsgAddr.writeU64(0x0);
-            console.log("[+] 清空写入后内存预览: " + insertTextMsgAddr.readPointer());
+            insertMsgAddr.writeU64(0x0);
+            console.log("[+] 清空写入后内存预览: " + insertMsgAddr.readPointer());
             taskIdGlobal = 0;
             receiverGlobal = "";
             senderGlobal = "";
             contentGlobal = "";
+            atUserGlobal = "";
             send({
                 type: "finish",
             })
@@ -406,4 +424,3 @@ function attachReq2buf() {
 setImmediate(attachReq2buf);
 
 // -------------------------Req2Buf公共部分分区-------------------------
-
