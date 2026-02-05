@@ -219,12 +219,13 @@ var textCgiAddr = ptr(0);
 var sendTextMessageAddr = ptr(0);
 var textMessageAddr = ptr(0);
 var textProtoX1PayloadAddr = ptr(0);
-var sendMessageCallbackFunc = ptr(0);
+var sendMessageCallbackFunc = baseAddr.add({{.sendMessageCallbackFunc}});
 var messageCallbackFunc1 = ptr(0);
 
 
 // 双方公共使用的地址
-var triggerX1Payload = ptr({{.triggerX1Payload}});
+var triggerX1Payload;
+var triggerX0;
 var req2bufEnterAddr = baseAddr.add({{.req2bufEnterAddr}});
 var req2bufExitAddr = baseAddr.add({{.req2bufExitAddr}});
 var sendFuncAddr = baseAddr.add({{.sendFuncAddr}});
@@ -233,7 +234,7 @@ var sendMsgType = "";
 var buf2RespAddr = baseAddr.add({{.buf2RespAddr}});
 
 // 图片消息全局变量
-var sendImgMessageCallbackFunc = ptr(0);
+var sendImgMessageCallbackFunc = baseAddr.add({{.sendImgMessageCallbackFunc}});
 var uploadImageAddr = baseAddr.add({{.uploadImageAddr}});
 var imgProtobufAddr = baseAddr.add({{.imgProtobufAddr}});
 var patchImgProtobufFunc1 = baseAddr.add({{.patchImgProtobufFunc1}})
@@ -247,7 +248,9 @@ var imgMessageAddr = ptr(0);
 var imgProtoX1PayloadAddr = ptr(0);
 var uploadGlobalX0 = ptr(0)
 var uploadFunc1Addr = ptr(0)
+var uploadFunc1 = baseAddr.add({{.uploadFunc1}});
 var uploadFunc2Addr = ptr(0)
+var uploadFunc2 = baseAddr.add({{.uploadFunc2}});
 var imageIdAddr = ptr(0)
 var md5Addr = ptr(0)
 var uploadAesKeyAddr = ptr(0)
@@ -288,7 +291,7 @@ function setupSendTextMessageDynamic() {
     // B. 构建 sendTextMessageAddr 结构体 (X24 基址位置)
     sendTextMessageAddr.add(0x00).writeU64(0);
     sendTextMessageAddr.add(0x08).writeU64(0);
-    sendTextMessageAddr.add(0x10).writePointer(sendMessageCallbackFunc);
+    sendTextMessageAddr.add(0x10).writeU64(0);
     sendTextMessageAddr.add(0x18).writeU64(1);
     sendTextMessageAddr.add(0x20).writeU32(taskIdGlobal);
     sendTextMessageAddr.add(0x28).writePointer(textMessageAddr); // 指向动态分配的 Message
@@ -301,7 +304,7 @@ function setupSendTextMessageDynamic() {
     }));
 
     // C. 构建 Message 结构体
-    textMessageAddr.add(0x00).writePointer(messageCallbackFunc1);
+    textMessageAddr.add(0x00).writePointer(sendMessageCallbackFunc);
     textMessageAddr.add(0x08).writeU32(taskIdGlobal);
     textMessageAddr.add(0x0c).writeU32(0x20a);
     textMessageAddr.add(0x10).writeU64(0x3);
@@ -366,7 +369,7 @@ function triggerSendTextMessage(taskId, receiver, content, atUser) {
     const payloadData = [
         0x0A, 0x02, 0x00, 0x00,                         // 0x00
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x08
-        0x03, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, // 0x10
+        0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, // 0x10
         0x40, 0xec, 0x0e, 0x12, 0x01, 0x00, 0x00, 0x00, // 0x18
         0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x20
         0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, // 0x28
@@ -387,7 +390,7 @@ function triggerSendTextMessage(taskId, receiver, content, atUser) {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xA0
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xA8
         0x00, 0x00, 0x00, 0x00, 0xAA, 0xAA, 0xAA, 0xAA, // 0xB0
-        0xC0, 0x66, 0xED, 0x75, 0x01, 0x00, 0x00, 0x00, // 0xB8
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xB8
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xC0
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xC8
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xD0
@@ -404,6 +407,7 @@ function triggerSendTextMessage(taskId, receiver, content, atUser) {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x128
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x130
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x138
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x138
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x140
         0x01, 0x00, 0x00, 0x00, 0xAA, 0xAA, 0xAA, 0xAA, // 0x148
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x150
@@ -414,29 +418,46 @@ function triggerSendTextMessage(taskId, receiver, content, atUser) {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x178
         0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x180
         0x00, 0x00, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, // 0x188
-        0x98, 0x67, 0xED, 0x75, 0x01, 0x00, 0x00, 0x00, // 0x190
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x190
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x198
     ];
     triggerX1Payload.writeU32(taskIdGlobal);
     triggerX1Payload.add(0x04).writeByteArray(payloadData);
     triggerX1Payload.add(0x18).writePointer(textCgiAddr);
+    triggerX1Payload.add(0xb8).writePointer(triggerX1Payload.add(0xc0));
+    triggerX1Payload.add(0x190).writePointer(triggerX1Payload.add(0x198));
     sendMsgType = "text"
 
     console.log("finished init payload")
-    const MMStartTask = new NativeFunction(sendFuncAddr, 'int64', ['pointer']);
+    const MMStartTask = new NativeFunction(sendFuncAddr, 'int64', ['pointer', 'pointer']);
 
     // 5. 调用函数
     try {
-        // const arg1 = globalMessagePtr; // 第一个指针参数
-        const arg2 = triggerX1Payload; // 第二个参数 0x175ED6600
-        const result = MMStartTask(arg2);
-        console.log(`[+] Execution MMStartTask ${sendFuncAddr} with args: (${arg2})  Success. Return value: ` + result);
+        const result = MMStartTask(triggerX0, triggerX1Payload);
+        console.log(`[+] Execution MMStartTask ${sendFuncAddr} with args: (${triggerX0}) (${triggerX1Payload})  Success. Return value: ` + result);
         return "ok";
     } catch (e) {
-        console.error(`[!] Error trigger  MMStartTask ${sendFuncAddr}  during execution: ` + e);
+        console.error(`[!] Error trigger  MMStartTask ${sendFuncAddr} with args: (${triggerX0}) (${triggerX1Payload}),   during execution: ` + e);
         return "fail";
     }
 }
+
+function AttachSendTextProto() {
+    Interceptor.attach(sendFuncAddr, {
+        onEnter: function (args) {
+
+            if (triggerX1Payload) {
+                return
+            }
+
+            triggerX0 = this.context.x0;
+            triggerX1Payload = this.context.x1;
+            console.log(`[+] 捕获到 StartTask 调用，X0地址：${triggerX0}, Payload 地址: ${triggerX1Payload}`);
+        }
+    })
+}
+
+setImmediate(AttachSendTextProto);
 
 // 拦截 SendTextProto 编码逻辑，注入自定义 Payload
 function attachSendTextProto() {
@@ -528,20 +549,14 @@ function attachReq2buf() {
             insertMsgAddr = x24_base.add(0x60);
             console.log("[+] 当前 Req2Buf X24 基址: " + x24_base);
 
-
-            // todo 修改为判断是发送图片还是文本
-            if (typeof sendTextMessageAddr !== 'undefined') {
-                if (sendMsgType === "text") {
-                    insertMsgAddr.writePointer(sendTextMessageAddr);
-                    console.log("[+] 发送文本消息成功! Req2Buf 已将 X24+0x60 指向新地址: " + sendTextMessageAddr +
-                        "[+] Req2Buf 写入后内存预览: " + insertMsgAddr);
-                } else if (sendMsgType === "img") {
-                    insertMsgAddr.writePointer(sendImgMessageAddr);
-                    console.log("[+] 发送图片消息成功! Req2Buf 已将 X24+0x60 指向新地址: " + sendImgMessageAddr +
-                        "[+] Req2Buf 写入后内存预览: " + insertMsgAddr);
-                }
-            } else {
-                console.error("[!] 错误: 变量 sendTextMessageAddr 未定义，请确保已运行分配逻辑。");
+            if (sendMsgType === "text") {
+                insertMsgAddr.writePointer(sendTextMessageAddr);
+                console.log("[+] 发送文本消息成功! Req2Buf 已将 X24+0x60 指向新地址: " + sendTextMessageAddr +
+                    "[+] Req2Buf 写入后内存预览: " + insertMsgAddr);
+            } else if (sendMsgType === "img") {
+                insertMsgAddr.writePointer(sendImgMessageAddr);
+                console.log("[+] 发送图片消息成功! Req2Buf 已将 X24+0x60 指向新地址: " + sendImgMessageAddr +
+                    "[+] Req2Buf 写入后内存预览: " + insertMsgAddr);
             }
         }
     });
@@ -596,7 +611,7 @@ function setupSendImgMessageDynamic() {
     // B. 构建 SendMessage 结构体 (X24 基址位置)
     sendImgMessageAddr.add(0x00).writeU64(0);
     sendImgMessageAddr.add(0x08).writeU64(0);
-    sendImgMessageAddr.add(0x10).writePointer(sendImgMessageCallbackFunc);
+    sendImgMessageAddr.add(0x10).writeU64(0);
     sendImgMessageAddr.add(0x18).writeU64(1);
     sendImgMessageAddr.add(0x20).writeU32(taskIdGlobal);
     sendImgMessageAddr.add(0x28).writePointer(imgMessageAddr);
@@ -609,7 +624,7 @@ function setupSendImgMessageDynamic() {
     }));
 
     // C. 构建 Message 结构体
-    imgMessageAddr.add(0x00).writePointer();
+    imgMessageAddr.add(0x00).writePointer(sendImgMessageCallbackFunc);
     imgMessageAddr.add(0x08).writeU32(taskIdGlobal);
     imgMessageAddr.add(0x0c).writeU32(0x6e);
     imgMessageAddr.add(0x10).writeU64(0x3);
@@ -621,8 +636,8 @@ function setupSendImgMessageDynamic() {
     console.log(" [+] Dynamic Memory Setup Complete. - Message Object: " + imgMessageAddr);
 
 
-    uploadFunc1Addr.writePointer(baseAddr.add(0x802b8b0));
-    uploadFunc2Addr.writePointer(baseAddr.add(0x7fd5908));
+    uploadFunc1Addr.writePointer(uploadFunc1);
+    uploadFunc2Addr.writePointer(uploadFunc2);
 }
 
 setImmediate(setupSendImgMessageDynamic);
@@ -738,7 +753,6 @@ function triggerSendImgMessage(taskId, sender, receiver) {
     triggerX1Payload.add(0x18).writePointer(imgCgiAddr);
     sendMsgType = "img"
 
-    console.log("finished init payload")
     const MMStartTask = new NativeFunction(sendFuncAddr, 'int64', ['pointer']);
 
     // 5. 调用函数

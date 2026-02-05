@@ -5,48 +5,283 @@ if (!baseAddr) {
 }
 console.log("[+] WeChat base address: " + baseAddr);
 
+// -------------------------基础函数分区-------------------------
+function toVarint(n) {
+    let res = [];
+    while (n >= 128) {
+        res.push((n & 0x7F) | 0x80); // 取后7位，最高位置1
+        n = n >> 7;                 // 右移7位
+    }
+    res.push(n); // 最后一位最高位为0
+    return res;
+}
 
-// 触发函数地址,不同版本的地址看wechat_version 中的json文件复制过来
-var sendImgMessageCallbackFunc = ptr(0x0);
-var imgMessageCallbackFunc1 = baseAddr.add(0x7fa0b18);
-var CndOnCompleteAddr = baseAddr.add(0x34154E0);
 
-// 这个必须是绝对位置
-var triggerX1Payload = ptr(0x175ED6600);
-var triggerFuncAddr = baseAddr.add(0x448A858);
-var req2bufEnterAddr = baseAddr.add(0x34566C0);
-var req2bufExitAddr = baseAddr.add(0x34577D8);
-var imgProtobufAddr = baseAddr.add(0x2275BFC);
-var patchImgProtobufFunc1 = baseAddr.add(0x2275BB8)
-var patchImgProtobufFunc2 = baseAddr.add(0x2275BD8);
-var imgProtobufDeleteAddr = baseAddr.add(0x2275C14);
+function stringToHexArray(str) {
+    var utf8Str = unescape(encodeURIComponent(str));
+    var arr = [];
+    for (var i = 0; i < utf8Str.length; i++) {
+        arr.push(utf8Str.charCodeAt(i)); // 获取字符的 ASCII 码 (即十六进制值)
+    }
+    return arr;
+}
 
-// 消息体的一些指针地址
+
+function generateRandom5ByteVarint() {
+    let res = [];
+
+    // 前 4 个字节：最高位(bit 7)必须是 1，低 7 位随机
+    for (let i = 0; i < 4; i++) {
+        let random7Bit = Math.floor(Math.random() * 128);
+        res.push(random7Bit | 0x80); // 强制设置最高位为 1
+    }
+
+    // 第 5 个字节：最高位必须是 0，为了确保不变成 4 字节，低 7 位不能全为 0
+    let lastByte = Math.floor(Math.random() * 127) + 1;
+    res.push(lastByte & 0x7F); // 确保最高位为 0
+
+    return res;
+}
+
+
+// 辅助函数：Protobuf Varint 编码 (对应 get_varint_timestamp_bytes)
+function getVarintTimestampBytes() {
+    let ts = Math.floor(Date.now() / 1000);
+    let encodedBytes = [];
+    let tempTs = ts >>> 0; // 强制转为 32位 无符号整数
+
+    while (true) {
+        let byte = tempTs & 0x7F;
+        tempTs >>>= 7;
+        if (tempTs !== 0) {
+            encodedBytes.push(byte | 0x80);
+        } else {
+            encodedBytes.push(byte);
+            break;
+        }
+    }
+    return encodedBytes;
+}
+
+function patchString(addr, plainStr) {
+    const bytes = [];
+    for (let i = 0; i < plainStr.length; i++) {
+        bytes.push(plainStr.charCodeAt(i));
+    }
+
+    addr.writeByteArray(bytes);
+    addr.add(bytes.length).writeU8(0);
+}
+
+function generateAESKey() {
+    const chars = 'abcdef0123456789';
+    let key = '';
+    for (let i = 0; i < 32; i++) {
+        key += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return key;
+}
+
+function getCleanString(uint8Array) {
+    var out = "";
+    var i = 0;
+    var len = uint8Array.length;
+
+    while (i < len) {
+        var c = uint8Array[i++];
+
+        // 1. 处理单字节 (ASCII: 0xxxxxxx)
+        if (c < 0x80) {
+            // 只保留可见字符 (Space 32 到 ~ 126)
+            if (c >= 32 && c <= 126) {
+                out += String.fromCharCode(c);
+            }
+        }
+        // 2. 处理双字节 (110xxxxx 10xxxxxx)
+        else if ((c & 0xE0) === 0xC0 && i < len) {
+            var c2 = uint8Array[i++];
+            if ((c2 & 0xC0) === 0x80) {
+                // 这种通常是特殊拉丁字母等，按需保留
+                var charCode = ((c & 0x1F) << 6) | (c2 & 0x3F);
+                out += String.fromCharCode(charCode);
+            }
+        }
+        // 3. 处理三字节 (1110xxxx 10xxxxxx 10xxxxxx) -> 绝大多数汉字在此
+        else if ((c & 0xF0) === 0xE0 && i + 1 < len) {
+            var c2 = uint8Array[i++];
+            var c3 = uint8Array[i++];
+            if ((c2 & 0xC0) === 0x80 && (c3 & 0xC0) === 0x80) {
+                var charCode = ((c & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
+                if (
+                    (charCode >= 0x4E00 && charCode <= 0x9FA5) || // 基本汉字
+                    (charCode >= 0x3000 && charCode <= 0x303F) || // 常用中文标点 (。，、)
+                    (charCode >= 0xFF00 && charCode <= 0xFFEF) || // 全角符号/标点 (！：？)
+                    (charCode >= 0x2000 && charCode <= 0x206F) || // 常用标点扩展 (含 \u2005)
+                    (charCode >= 0x3400 && charCode <= 0x4DBF)    // 扩展 A 区汉字
+                ) {
+                    out += String.fromCharCode(charCode);
+                }
+            }
+        } else if ((c & 0xF8) === 0xF0 && i + 2 < len) {
+            var c2 = uint8Array[i++];
+            var c3 = uint8Array[i++];
+            var c4 = uint8Array[i++];
+            if ((c2 & 0xC0) === 0x80 && (c3 & 0xC0) === 0x80 && (c4 & 0xC0) === 0x80) {
+                // 计算 Unicode 码点
+                var codePoint = ((c & 0x07) << 18) | ((c2 & 0x3F) << 12) | ((c3 & 0x3F) << 6) | (c4 & 0x3F);
+
+                // Emoji 范围通常在 U+1F000 到 U+1F9FF 之间
+                if (codePoint >= 0x1F000 && codePoint <= 0x1FADF) {
+                    // 使用 fromCodePoint 处理 4 字节字符
+                    out += String.fromCodePoint(codePoint);
+                }
+            }
+        }
+    }
+    return out;
+}
+
+function generateBytes(n) {
+    // 生成随机字符串
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+
+    for (let i = 0; i < n; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    return stringToHexArray(result);
+}
+
+// -------------------------基础函数分区-------------------------
+
+// -------------------------全局变量分区-------------------------
+
+// 双方公共使用的地址
+var triggerX1Payload;
+var triggerX0;
+var req2bufEnterAddr = baseAddr.add(0x35CEDBC);
+var req2bufExitAddr = baseAddr.add(0x35CFF94);
+var sendFuncAddr = baseAddr.add(0x4A49BC4);
+var insertMsgAddr = ptr(0);
+var sendMsgType = "";
+
+// 图片消息全局变量
+var uploadImageAddr = baseAddr.add(0x47D5D64);
+
+var imgProtobufAddr = baseAddr.add(0x237DFE0);
+var patchImgProtobufFunc1 = baseAddr.add(0x237DF9C)
+var patchImgProtobufFunc2 = baseAddr.add(0x237DFBC);
+var imgProtobufDeleteAddr = baseAddr.add(0x237DFF8);
+var CndOnCompleteAddr = baseAddr.add(0x358D98C);
+var imgMessageCallbackFunc1 = baseAddr.add(0x865D680);
+
 var imgCgiAddr = ptr(0);
 var sendImgMessageAddr = ptr(0);
 var imgMessageAddr = ptr(0);
-var contentAddr = ptr(0);
-var insertMsgAddr = ptr(0);
-var protoX1PayloadAddr = ptr(0);
-
-// 消息的taskId
-var taskIdGlobal = 0x20000090 // 最好比较大，不和原始的微信消息重复
-var receiverGlobal = "wxid_7wd1ece99f7i21"
-var senderGlobal = "wxid_ldftuhe36izg19"
-var lastSendTime = 0;
-
-var globalImageCdnKey = "";
-var globalAesKey1 = "";
-var globalMd5Key = "";
+var imgProtoX1PayloadAddr = ptr(0);
 var uploadGlobalX0 = ptr(0)
 var uploadFunc1Addr = ptr(0)
+var uploadFunc1 = baseAddr.add(0x086EEB8C8)
 var uploadFunc2Addr = ptr(0)
+var uploadFunc2 = baseAddr.add(0x086E32AB0)
 var imageIdAddr = ptr(0)
 var md5Addr = ptr(0)
 var uploadAesKeyAddr = ptr(0)
 var ImagePathAddr1 = ptr(0)
 var uploadImagePayload = ptr(0);
 
+var globalImageCdnKey = "";
+var globalAesKey1 = "";
+var globalMd5Key = "";
+
+// 发送消息的全局变量
+var taskIdGlobal = 0x20000090 // 最好比较大，不和原始的微信消息重复
+var receiverGlobal = "wxid_"
+var contentGlobal = "";
+var senderGlobal = "wxid_"
+var lastSendTime = 0;
+var atUserGlobal = "";
+
+const imageCp = generateBytes(16) // m30c4674f5a0b9d
+
+// -------------------------全局变量分区-------------------------
+
+
+
+// -------------------------Req2Buf公共部分分区-------------------------
+function attachReq2buf() {
+    console.log("[+] Target Req2buf enter Address: " + req2bufEnterAddr);
+
+    // 2. 开始拦截
+    Interceptor.attach(req2bufEnterAddr, {
+        onEnter: function (args) {
+            if (!this.context.x1.equals(taskIdGlobal)) {
+                return;
+            }
+
+            console.log("[+] 已命中目标Req2Buf地址:0x1033EE8E8 taskId:" + taskIdGlobal + "base:" + baseAddr);
+
+            // 3. 获取 X24 寄存器的值
+            const x24_base = this.context.x24;
+            insertMsgAddr = x24_base.add(0x60);
+            console.log("[+] 当前 Req2Buf X24 基址: " + x24_base);
+
+            if (sendMsgType === "text") {
+                insertMsgAddr.writePointer(sendTextMessageAddr);
+                console.log("[+] 发送文本消息成功! Req2Buf 已将 X24+0x60 指向新地址: " + sendTextMessageAddr +
+                    "[+] Req2Buf 写入后内存预览: " + insertMsgAddr);
+            } else if (sendMsgType === "img") {
+                insertMsgAddr.writePointer(sendImgMessageAddr);
+                console.log("[+] 发送图片消息成功! Req2Buf 已将 X24+0x60 指向新地址: " + sendImgMessageAddr +
+                    "[+] Req2Buf 写入后内存预览: " + insertMsgAddr);
+            }
+        }
+    });
+
+    // 在出口处拦截req2buf，把insertMsgAddr设置为0，避免被垃圾回收导致整个程序崩溃
+    console.log("[+] Target Req2buf leave Address: " + req2bufExitAddr);
+    Interceptor.attach(req2bufExitAddr, {
+        onEnter: function (args) {
+            if (!this.context.x25.equals(taskIdGlobal)) {
+                return;
+            }
+            insertMsgAddr.writeU64(0x0);
+            console.log("[+] 清空写入后内存预览: " + insertMsgAddr.readPointer());
+            taskIdGlobal = 0;
+            receiverGlobal = "";
+            senderGlobal = "";
+            contentGlobal = "";
+            atUserGlobal = "";
+            send({
+                type: "finish",
+            })
+        }
+    });
+}
+
+setImmediate(attachReq2buf);
+
+function AttachSendTextProto() {
+    Interceptor.attach(sendFuncAddr, {
+        onEnter: function (args) {
+            if (triggerX1Payload) {
+                return
+            }
+
+            triggerX0 = this.context.x0;
+            triggerX1Payload = this.context.x1;
+            console.log(`[+] 捕获到 StartTask 调用，X0地址：${triggerX0}, Payload 地址: ${triggerX1Payload}`);
+        }
+    })
+}
+
+setImmediate(AttachSendTextProto);
+
+
+// -------------------------Req2Buf公共部分分区-------------------------
+
+// -------------------------发送图片消息分区-------------------------
 
 // 初始化进行内存的分配
 function setupSendImgMessageDynamic() {
@@ -56,27 +291,22 @@ function setupSendImgMessageDynamic() {
     // 分配原则：字符串给 64-128 字节，结构体按实际大小分配
     imgCgiAddr = Memory.alloc(128);
     sendImgMessageAddr = Memory.alloc(256);
-    imgMessageAddr = Memory.alloc(512);
-    contentAddr = Memory.alloc(16);
-
-    uploadFunc1Addr = Memory.alloc(16);
-    uploadFunc2Addr = Memory.alloc(16);
-    imageIdAddr = Memory.alloc(128);
-    md5Addr = Memory.alloc(128);
-    uploadAesKeyAddr = Memory.alloc(128);
-    ImagePathAddr1 = Memory.alloc(128);
-    uploadImagePayload = Memory.alloc(512);
-
-
+    imgMessageAddr = Memory.alloc(256);
+    uploadFunc1Addr = Memory.alloc(24);
+    uploadFunc2Addr = Memory.alloc(24);
+    imageIdAddr = Memory.alloc(256);
+    md5Addr = Memory.alloc(256);
+    uploadAesKeyAddr = Memory.alloc(256);
+    ImagePathAddr1 = Memory.alloc(256);
+    uploadImagePayload = Memory.alloc(1024);
 
     // A. 写入字符串内容
     patchString(imgCgiAddr, "/cgi-bin/micromsg-bin/uploadmsgimg");
-    patchString(contentAddr, " ");
 
     // B. 构建 SendMessage 结构体 (X24 基址位置)
     sendImgMessageAddr.add(0x00).writeU64(0);
     sendImgMessageAddr.add(0x08).writeU64(0);
-    sendImgMessageAddr.add(0x10).writePointer(sendImgMessageCallbackFunc);
+    sendImgMessageAddr.add(0x10).writeU64(0);
     sendImgMessageAddr.add(0x18).writeU64(1);
     sendImgMessageAddr.add(0x20).writeU32(taskIdGlobal);
     sendImgMessageAddr.add(0x28).writePointer(imgMessageAddr);
@@ -101,21 +331,21 @@ function setupSendImgMessageDynamic() {
     console.log(" [+] Dynamic Memory Setup Complete. - Message Object: " + imgMessageAddr);
 
 
-    uploadFunc1Addr.writePointer(baseAddr.add(0x802b8b0));
-    uploadFunc2Addr.writePointer(baseAddr.add(0x7fd5908));
+    uploadFunc1Addr.writePointer(uploadFunc1);
+    uploadFunc2Addr.writePointer(uploadFunc2);
 }
 
 setImmediate(setupSendImgMessageDynamic);
 
 
-function patchProtoBuf() {
+function patchImgProtoBuf() {
     Memory.patchCode(patchImgProtobufFunc1, 4, code => {
         const cw = new Arm64Writer(code, {pc: patchImgProtobufFunc1});
         cw.putNop();
         cw.flush();
     });
 
-    console.log("[+] Patching BL to NOP at " + patchImgProtobufFunc1 + " completed.");
+    console.log("[+] Patching patchImgProtobufFunc1 " + patchImgProtobufFunc1 + " 成功.");
 
     Memory.patchCode(patchImgProtobufFunc2, 4, code => {
         const cw = new Arm64Writer(code, {pc: patchImgProtobufFunc2});
@@ -123,7 +353,7 @@ function patchProtoBuf() {
         cw.flush();
     });
 
-    console.log("[+] Patching BL to NOP at " + patchImgProtobufFunc2 + " completed.");
+    console.log("[+] Patching patchImgProtobufFunc2 " + patchImgProtobufFunc2 + " 成功.");
 
     Memory.patchCode(imgProtobufDeleteAddr, 4, code => {
         const cw = new Arm64Writer(code, {pc: imgProtobufDeleteAddr});
@@ -131,15 +361,19 @@ function patchProtoBuf() {
         cw.flush();
     });
 
-    console.log("[+] Patching BL DELETE to NOP at " + imgProtobufDeleteAddr + " completed.");
+    console.log("[+] Patching imgProtobufDeleteAddr " + imgProtobufDeleteAddr + " 成功.");
 }
 
-setImmediate(patchProtoBuf);
 
-function manualTrigger(taskId, sender, receiver) {
+setTimeout(function () {
+    console.log("[+] 2秒等待结束，准备执行 Patch...");
+    patchImgProtoBuf();
+}, 2000);
+
+function triggerSendImgMessage(taskId, sender, receiver) {
     console.log("[+] Manual Trigger Started...");
-    if (!taskId || !receiver) {
-        console.error("[!] taskId or Receiver or Content is empty!");
+    if (!taskId || !receiver || !sender) {
+        console.error("[!] taskId or receiver or sender is empty!");
         return "fail";
     }
 
@@ -179,7 +413,7 @@ function manualTrigger(taskId, sender, receiver) {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xA0
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xA8
         0x00, 0x00, 0x00, 0x00, 0xAA, 0xAA, 0xAA, 0xAA, // 0xB0
-        0xC0, 0x66, 0xED, 0x75, 0x01, 0x00, 0x00, 0x00, // 0xB8
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xB8
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xC0
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xC8
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xD0
@@ -206,132 +440,49 @@ function manualTrigger(taskId, sender, receiver) {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x178
         0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x180
         0x00, 0x00, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, // 0x188
-        0x98, 0x67, 0xED, 0x75, 0x01, 0x00, 0x00, 0x00, // 0x190
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x190
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x198
     ];
-
-    // 从 0x175ED6604 开始写入 Payload
     triggerX1Payload.writeU32(taskIdGlobal);
     triggerX1Payload.add(0x04).writeByteArray(payloadData);
     triggerX1Payload.add(0x18).writePointer(imgCgiAddr);
+    triggerX1Payload.add(0xb8).writePointer(triggerX1Payload.add(0xc0));
+    triggerX1Payload.add(0x190).writePointer(triggerX1Payload.add(0x198));
+    sendMsgType = "img"
 
     console.log("finished init payload")
-
-    const MMStartTask = new NativeFunction(triggerFuncAddr, 'int64', ['pointer']);
+    const MMStartTask = new NativeFunction(sendFuncAddr, 'int64', ['pointer', 'pointer']);
 
     // 5. 调用函数
     try {
-        const arg2 = triggerX1Payload; // 第二个参数 0x175ED6600
-        console.log(`[+] Calling MMStartTask  at ${triggerFuncAddr} with args: (${arg2})`);
-        const result = MMStartTask(arg2);
-        console.log("[+] Execution MMStartTask  Success. Return value: " + result);
+        const result = MMStartTask(triggerX0, triggerX1Payload);
+        console.log(`[+] Execution StartTask ${sendFuncAddr} with args: (${triggerX0}) (${triggerX1Payload})  Success. Return value: ` + result);
         return "ok";
     } catch (e) {
-        console.error("[!] Error trigger function  during execution: " + e);
+        console.error(`[!] Error trigger StartTask ${sendFuncAddr} with args: (${triggerX0}) (${triggerX1Payload}),   during execution: ` + e);
         return "fail";
     }
 }
 
 
-// ReqBuf 进行拦截，替换入参数的消息指针
-function attachReq2buf() {
-
-    console.log("[+] Target Req2buf enter Address: " + req2bufEnterAddr);
-
-    // 2. 开始拦截
-    Interceptor.attach(req2bufEnterAddr, {
-        onEnter: function (args) {
-            if (!this.context.x1.equals(taskIdGlobal)) {
-                return;
-            }
-
-            console.log("[+] 已命中目标Req2Buf地址:0x1033EE8E8 taskId:" + taskIdGlobal + "base:" + baseAddr);
-
-            // 3. 获取 X24 寄存器的值
-            const x24_base = this.context.x24;
-            insertMsgAddr = x24_base.add(0x60);
-            console.log("[+] 当前 Req2Buf X24 基址: " + x24_base);
-
-            if (typeof sendImgMessageAddr !== 'undefined') {
-                insertMsgAddr.writePointer(sendImgMessageAddr);
-                console.log("[+] 成功! Req2Buf 已将 X24+0x60 指向新地址: " + sendImgMessageAddr +
-                    "[+] Req2Buf 写入后内存预览: " + insertMsgAddr);
-                console.log(hexdump(insertMsgAddr, {
-                    offset: 0,
-                    length: 16,
-                    header: true,
-                    ansi: true
-                }))
-                console.log(hexdump(sendImgMessageAddr, {
-                    offset: 0,
-                    length: 48,
-                    header: true,
-                    ansi: true
-                }))
-            } else {
-                console.error("[!] 错误: 变量 sendMessageAddr 未定义，请确保已运行分配逻辑。");
-            }
-        }
-    });
-
-    // 在出口处拦截req2buf，把insertMsgAddr设置为0，避免被垃圾回收导致整个程序崩溃
-    console.log("[+] Target Req2buf leave Address: " + req2bufExitAddr);
-    Interceptor.attach(req2bufExitAddr, {
-        onEnter: function (args) {
-            if (!this.context.x25.equals(taskIdGlobal)) {
-                return;
-            }
-            insertMsgAddr.writeU64(0x0);
-            console.log("[+] 清空写入后内存预览: " + insertMsgAddr.readPointer());
-            receiverGlobal = "";
-            taskIdGlobal = 0;
-            send({
-                type: "finish",
-            })
-        }
-    });
-}
-
-setImmediate(attachReq2buf);
-
-
-function stringToHexArray(str) {
-    var utf8Str = unescape(encodeURIComponent(str));
-    var arr = [];
-    for (var i = 0; i < utf8Str.length; i++) {
-        arr.push(utf8Str.charCodeAt(i)); // 获取字符的 ASCII 码 (即十六进制值)
-    }
-    return arr;
-}
-
 // 拦截 Protobuf 编码逻辑，注入自定义 Payload
 function attachProto() {
-    console.log("[+] proto注入拦截目标地址: " + protoX1PayloadAddr);
-    protoX1PayloadAddr = Memory.alloc(1024);
-    console.log("[+] Frida 分配的 Payload 地址: " + protoX1PayloadAddr);
+    console.log("[+] proto注入拦截目标地址: " + imgProtoX1PayloadAddr);
+    imgProtoX1PayloadAddr = Memory.alloc(1024);
+    console.log("[+] Frida 分配的 Payload 地址: " + imgProtoX1PayloadAddr);
 
     Interceptor.attach(imgProtobufAddr, {
         onEnter: function (args) {
             console.log("[+] Protobuf 拦截命中");
 
-            // var sp = this.context.sp;
-            // var firstValue = sp.readU32();
-            // if (firstValue !== taskIdGlobal) {
-            //     console.log("[+] Protobuf 拦截未命中，跳过...");
-            //     return;
-            // }
-
             const type = [0x0A, 0x40, 0x0A, 0x01, 0x00]
-            const msgId = [0x10, 0xc6, 0xbc, 0x90, 0xb9, 0x08] // 时间戳
+            const msgId = [0x10].concat(generateRandom5ByteVarint())
             const cpHeader = [0x1A, 0x10]
-            // m30c4674f5a0b9d
-            const cp = [0x6D, 0x33, 0x30, 0x63, 0x34, 0x36, 0x37, 0x34, 0x66, 0x35, 0x61, 0x30, 0x62, 0x39, 0x64, 0x30]
 
             const randomId = [0x20, 0xAF, 0xAC, 0x90, 0x93, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01]
             const sysHeader = [0x2A, 0x15]
             // UnifiedPCMac 26 arm64
             const sys = [0x55, 0x6E, 0x69, 0x66, 0x69, 0x65, 0x64, 0x50, 0x43, 0x4D, 0x61, 0x63, 0x20, 0x32, 0x36, 0x20, 0x61, 0x72, 0x6D, 0x36, 0x34, 0x30]
-
 
             // 45872025384@chatroom_176787000_60_xwechat_1 只需要改这个时间戳就能重复发送
             const receiverMsgId = stringToHexArray(receiverGlobal).concat([0x5F])
@@ -339,7 +490,7 @@ function attachProto() {
                 .concat([0x5F, 0x31, 0x36, 0x30, 0x5F, 0x78, 0x77, 0x65, 0x63, 0x68, 0x61, 0x74, 0x5F, 0x33]);
 
             // 0xb0, 0x02 是长度，需要看一下什么的长度
-            const msgIdHeader = [0xb0, 0x02, 0x12, 0x2E, 0x0A, 0x2C]
+            const msgIdHeader = [0xb0, 0x02, 0x12, receiverMsgId.length + 2, 0x0A, receiverMsgId.length]
 
             const senderHeader = [0x1A, senderGlobal.length + 2, 0x0A, senderGlobal.length];
             // wxid_xxxx 或者 chatroom
@@ -395,29 +546,21 @@ function attachProto() {
                 0xC8, 0x02, 0x00, 0x00 // 0x3E8
             ]
 
-            const finalPayload = type.concat(msgId, cpHeader, cp, randomId, sysHeader, sys, msgIdHeader, receiverMsgId,
+            const finalPayload = type.concat(msgId, cpHeader, imageCp, randomId, sysHeader, sys, msgIdHeader, receiverMsgId,
                 senderHeader, sender, receiverHeader, receiver, randomId1, type1, randomId2, randomId3, randomId4, htmlHeader, html,
                 cdnHeader, cdn, cdn2Header, cdn2, aesKeyHeader, aesKey, randomId5, cdn3Header, cdn3, randomId6, randomId7, randomId8,
                 aesKey1Header, aesKey1, md5Header, me5Key, randomId9, left0)
 
             console.log("[+] Payload 准备写入");
-            // dumpMemoryToHex(this.context.x1, 1024)
-            // console.log("[+] 寄存器修改完成: X1=" + hexdump(this.context.x1, {
-            //     offset: 0,
-            //     length: 1024,
-            //     header: true,
-            //     ansi: true
-            // }));
-
-            protoX1PayloadAddr.writeByteArray(finalPayload);
+            imgProtoX1PayloadAddr.writeByteArray(finalPayload);
             console.log("[+] Payload 已写入，长度: " + finalPayload.length);
 
-            this.context.x1 = protoX1PayloadAddr;
+            this.context.x1 = imgProtoX1PayloadAddr;
             this.context.x2 = ptr(finalPayload.length);
 
-            console.log("[+] 寄存器修改完成: X1=" + this.context.x1 + ", X2=" + this.context.x2, hexdump(protoX1PayloadAddr, {
+            console.log("[+] 寄存器修改完成: X1=" + this.context.x1 + ", X2=" + this.context.x2, hexdump(imgProtoX1PayloadAddr, {
                 offset: 0,
-                length: 1024,
+                length: 256,
                 header: true,
                 ansi: true
             }));
@@ -427,20 +570,8 @@ function attachProto() {
 
 setImmediate(attachProto);
 
-function toVarint(n) {
-    let res = [];
-    while (n >= 128) {
-        res.push((n & 0x7F) | 0x80); // 取后7位，最高位置1
-        n = n >> 7;                 // 右移7位
-    }
-    res.push(n); // 最后一位最高位为0
-    return res;
-}
 
-
-
-function manualUpload(receiver, md5, imagePath) {
-
+function triggerUploadImg(receiver, md5, imagePath) {
     const payload = [
         0x20, 0x05, 0x33, 0x8C, 0x0B, 0x00, 0x00, 0x00, // 函数 10802b8b0 的指针
         0x00, 0x05, 0x33, 0x8C, 0x0B, 0x00, 0x00, 0x00, // 函数 107fd5908 的指针
@@ -463,7 +594,7 @@ function manualUpload(receiver, md5, imagePath) {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x01, 0xAA, 0xAA, 0xAA, 0x01, 0x00, 0x00, 0x00, // 0x98
         0x00, 0x00, 0x00, 0x00, 0xAA, 0xAA, 0xAA, 0xAA, // 0xa0
-        0xA0, 0xBE, 0x2D, 0x8C, 0x0B, 0x00, 0x00, 0x00, // 某个aesid 7ea41d569f705357780968e9104284cf 0xa8
+        0xA0, 0xBE, 0x2D, 0x8C, 0x0B, 0x00, 0x00, 0x00, // 0xa8
         0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0xb0
         0x28, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, // 0xb8
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -501,7 +632,7 @@ function manualUpload(receiver, md5, imagePath) {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x1c0
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x1c8
         0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x1d0
-        0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x1d8 有个指针
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x1d8
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x1e0
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x1e8
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x1f0
@@ -542,60 +673,60 @@ function manualUpload(receiver, md5, imagePath) {
     uploadImagePayload.add(0x140).writePointer(ImagePathAddr1);
     uploadImagePayload.add(0x1f8).writePointer(uploadAesKeyAddr);
 
+    const startUploadMedia = new NativeFunction(uploadImageAddr, 'int64', ['pointer', 'pointer']);
 
-    const targetAddr = baseAddr.add(0x45DC834);
-    const startC2cUpload = new NativeFunction(targetAddr, 'int64', ['pointer', 'pointer']);
-
-    console.log("开始手动触发 C2C 上传...");
-    const result = startC2cUpload(uploadGlobalX0, uploadImagePayload);
+    console.log(`开始手动触发 C2C 上传 X0 ${uploadGlobalX0}, X1: ${uploadImagePayload}` + hexdump(uploadImagePayload, {
+        offset: 0,
+        length: 256,
+        header: true,
+        ansi: true
+    }));
+    const result = startUploadMedia(uploadGlobalX0, uploadImagePayload);
     console.log("调用结果: " + result);
 }
 
 function attachUploadMedia() {
-    const targetAddr = baseAddr.add(0x45DC85C);
-    Interceptor.attach(targetAddr, {
+    Interceptor.attach(uploadImageAddr.add(0x10), {
         onEnter: function (args) {
-            console.log("[+] enter UploadMedia");
             uploadGlobalX0 = this.context.x0;
-            console.log("UploadMedia x1: " + uploadGlobalX0);
+            const x1 = this.context.x1;
+            const selfId = x1.add(0x68).readUtf8String();
+            const imagePath = x1.add(0xe0).readPointer().readUtf8String();
+            send({
+                type: "upload",
+                self_id: selfId,
+            })
+            console.log("UploadMedia x0: " + uploadGlobalX0 + " imagePath: " + imagePath + " selfId: " + selfId);
         }
     })
 }
 
 setImmediate(attachUploadMedia);
 
-
-function patchString(addr, plainStr) {
-    const bytes = [];
-    for (let i = 0; i < plainStr.length; i++) {
-        bytes.push(plainStr.charCodeAt(i));
-    }
-
-    addr.writeByteArray(bytes);
-    addr.add(bytes.length).writeU8(0);
-}
-
-function generateAESKey() {
-    const chars = 'abcdef0123456789';
-    let key = '';
-    for (let i = 0; i < 32; i++) {
-        key += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return key;
-}
-
-
 function patchCdnOnComplete() {
     Interceptor.attach(CndOnCompleteAddr, {
         onEnter: function (args) {
-            console.log("[+] enter CndOnCompleteAddr");
+            console.log("[+] enter CndOnUploadCompleteAddr");
 
             try {
                 const x2 = this.context.x2;
                 globalImageCdnKey = x2.add(0x60).readPointer().readUtf8String();
                 globalAesKey1 = x2.add(0x78).readPointer().readUtf8String();
                 globalMd5Key = x2.add(0x90).readPointer().readUtf8String();
-                console.log("[+] globalImageCdnKey: " + globalImageCdnKey + " globalAesKey1: " + globalAesKey1 + " globalAesKey2: " + globalMd5Key);
+                const targetId = x2.add(0x40).readUtf8String();
+                console.log("[+] globalImageCdnKey: " + globalImageCdnKey + " globalAesKey1: " + globalAesKey1 +
+                    " globalMd5Key: " + globalMd5Key);
+                send({
+                    type: "finish",
+                })
+
+                if (globalImageCdnKey !== "" && globalImageCdnKey != null && globalAesKey1 !== "" && globalAesKey1 != null &&
+                    globalMd5Key !== "" && globalMd5Key != null) {
+                    send({
+                        type: "upload_finish",
+                        target_id: targetId,
+                    })
+                }
             } catch (e) {
                 console.log("[-] Memory access error at onEnter: " + e);
             }
@@ -605,7 +736,10 @@ function patchCdnOnComplete() {
 
 setImmediate(patchCdnOnComplete)
 
+
 rpc.exports = {
-    manualTrigger: manualTrigger,
-    manualUpload: manualUpload
+    triggerSendImgMessage: triggerSendImgMessage,
+    triggerUploadImg: triggerUploadImg,
 };
+
+// -------------------------发送图片消息分区-------------------------
