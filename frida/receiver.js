@@ -3,7 +3,7 @@ if (!baseAddr) {
     console.error("[!] 找不到 WeChat 模块基址，请检查进程名。");
 }
 
-var buf2RespAddr = baseAddr.add(0x35F4B58)
+var buf2RespAddr = baseAddr.add(0x37173B0)
 
 // -------------------------接收消息分区-------------------------
 function setReceiver() {
@@ -11,7 +11,6 @@ function setReceiver() {
     // 3. 开始拦截
     Interceptor.attach(buf2RespAddr, {
         onEnter: function (args) {
-            console.log("[*] 拦截到消息发送");
             const currentPtr = this.context.x1;
             let start = 0x1e;
             let senderLen = currentPtr.add(start).readU8();

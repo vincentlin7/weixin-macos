@@ -160,20 +160,20 @@ function generateBytes(n) {
 // 双方公共使用的地址
 var triggerX1Payload;
 var triggerX0;
-var req2bufEnterAddr = baseAddr.add(0x35CEDBC);
-var req2bufExitAddr = baseAddr.add(0x35CFF94);
-var sendFuncAddr = baseAddr.add(0x4A49BC4);
+var req2bufEnterAddr = baseAddr.add(0x36F1614);
+var req2bufExitAddr = baseAddr.add(0x36F27EC);
+var sendFuncAddr = baseAddr.add(0x47F1888);
 var insertMsgAddr = ptr(0);
 var sendMsgType = "";
 
 // 图片消息全局变量
-var uploadImageAddr = baseAddr.add(0x47D5D64);
-var imgProtobufAddr = baseAddr.add(0x237DFE0);
-var patchImgProtobufFunc1 = baseAddr.add(0x237DF9C)
-var patchImgProtobufFunc2 = baseAddr.add(0x237DFBC);
-var imgProtobufDeleteAddr = baseAddr.add(0x237DFF8);
-var CndOnCompleteAddr = baseAddr.add(0x358D98C);
-var imgMessageCallbackFunc1 = baseAddr.add(0x865D680);
+var uploadImageAddr = baseAddr.add(0x4938E08);
+var imgProtobufAddr = baseAddr.add(0x2455574);
+var patchImgProtobufFunc1 = baseAddr.add(0x2455530)
+var patchImgProtobufFunc2 = baseAddr.add(0x2455550);
+var imgProtobufDeleteAddr = baseAddr.add(0x245558C);
+var CndOnCompleteAddr = baseAddr.add(0x36B03A0);
+var imgMessageCallbackFunc1 = baseAddr.add(0x8781AF8);
 
 var uploadImageX1;
 var imgCgiAddr = ptr(0);
@@ -182,9 +182,9 @@ var imgMessageAddr = ptr(0);
 var imgProtoX1PayloadAddr = ptr(0);
 var uploadGlobalX0 = ptr(0)
 var uploadFunc1Addr = ptr(0)
-var uploadFunc1 = baseAddr.add(0x086EEB8C8)
+var uploadFunc1 = ptr(0)
 var uploadFunc2Addr = ptr(0)
-var uploadFunc2 = baseAddr.add(0x086E32AB0)
+var uploadFunc2 = ptr(0)
 var imageIdAddr = ptr(0)
 var md5Addr = ptr(0)
 var uploadAesKeyAddr = ptr(0)
@@ -732,7 +732,7 @@ function patchCdnOnComplete() {
 setImmediate(patchCdnOnComplete)
 
 function attachGetCallbackFromWrapper() {
-    Interceptor.attach(baseAddr.add(0x47A3828), {
+    Interceptor.attach(baseAddr.add(0x49068CC), {
         onEnter: function (args) {
             const tmpFileId = this.context.x1.readPointer().readUtf8String();
             const fileId = imageIdAddr.readUtf8String();
@@ -742,25 +742,25 @@ function attachGetCallbackFromWrapper() {
             }
 
             console.log("[+] GetCallbackFromWrapper x8: " + this.context.x8);
-            uploadCallback.add(0x10).writePointer(baseAddr.add(0x358D1A8));
+            uploadCallback.add(0x10).writePointer(baseAddr.add(0x36AFFEC));
             this.context.x8 = uploadCallback;
         }
     })
 
-    Interceptor.attach(baseAddr.add(0x47A3E24), {
-        onEnter: function (args) {
-            const tmpFileId = this.context.x1.readPointer().readUtf8String();
-            const fileId = imageIdAddr.readUtf8String();
-            if (tmpFileId !== fileId) {
-                console.log("[+] OnComplete tmpFileId: " + tmpFileId + " fileId: " + fileId);
-                return
-            }
-
-            console.log("[+] OnComplete x8: " + this.context.x8);
-            uploadCallback.add(0x30).writePointer(baseAddr.add(0x358E398));
-            this.context.x8 = uploadCallback;
-        }
-    })
+    // Interceptor.attach(baseAddr.add(0x47A3E24), {
+    //     onEnter: function (args) {
+    //         const tmpFileId = this.context.x1.readPointer().readUtf8String();
+    //         const fileId = imageIdAddr.readUtf8String();
+    //         if (tmpFileId !== fileId) {
+    //             console.log("[+] OnComplete tmpFileId: " + tmpFileId + " fileId: " + fileId);
+    //             return
+    //         }
+    //
+    //         console.log("[+] OnComplete x8: " + this.context.x8);
+    //         uploadCallback.add(0x30).writePointer(baseAddr.add(0x358E398));
+    //         this.context.x8 = uploadCallback;
+    //     }
+    // })
 }
 
 setImmediate(attachGetCallbackFromWrapper);

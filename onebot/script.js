@@ -220,7 +220,6 @@ var sendTextMessageAddr = ptr(0);
 var textMessageAddr = ptr(0);
 var textProtoX1PayloadAddr = ptr(0);
 var sendMessageCallbackFunc = baseAddr.add({{.sendMessageCallbackFunc}});
-var messageCallbackFunc1 = ptr(0);
 
 
 // 双方公共使用的地址
