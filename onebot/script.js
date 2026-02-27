@@ -298,12 +298,12 @@ function setupSendTextMessageDynamic() {
     sendTextMessageAddr.add(0x20).writeU32(taskIdGlobal);
     sendTextMessageAddr.add(0x28).writePointer(textMessageAddr); // 指向动态分配的 Message
 
-    console.log(" [+] sendTextMessageAddr Object: ", hexdump(sendTextMessageAddr, {
-        offset: 0,
-        length: 48,
-        header: true,
-        ansi: true
-    }));
+    // console.log(" [+] sendTextMessageAddr Object: ", hexdump(sendTextMessageAddr, {
+    //     offset: 0,
+    //     length: 48,
+    //     header: true,
+    //     ansi: true
+    // }));
 
     // C. 构建 Message 结构体
     textMessageAddr.add(0x00).writePointer(sendMessageCallbackFunc);
@@ -313,12 +313,12 @@ function setupSendTextMessageDynamic() {
     textMessageAddr.add(0x18).writePointer(textCgiAddr);
     textMessageAddr.add(0x20).writeU64(uint64("0x20"));
 
-    console.log(" [+] textMessageAddr Object: ", hexdump(textMessageAddr, {
-        offset: 0,
-        length: 64,
-        header: true,
-        ansi: true
-    }));
+    // console.log(" [+] textMessageAddr Object: ", hexdump(textMessageAddr, {
+    //     offset: 0,
+    //     length: 64,
+    //     header: true,
+    //     ansi: true
+    // }));
 
     console.log("[+] Dynamic Memory Setup Complete. - Message Object: " + textMessageAddr);
 }
@@ -333,15 +333,14 @@ function patchTextProtoBuf() {
         cw.flush();
     });
 
-    console.log("[+] Patching patchTextProtobufAddr " + patchTextProtobufAddr + " 成功.");
-
     Memory.patchCode(PatchTextProtobufDeleteAddr, 4, code => {
         const cw = new Arm64Writer(code, {pc: PatchTextProtobufDeleteAddr});
         cw.putNop();
         cw.flush();
     });
 
-    console.log("[+] Patching PatchTextProtobufDeleteAddr " + PatchTextProtobufDeleteAddr + " 成功.");
+    console.log("[+] Patching PatchTextProtobufDeleteAddr " + PatchTextProtobufDeleteAddr + " 成功." +
+        " Patching patchTextProtobufAddr " + patchTextProtobufAddr + " 成功.");
 }
 
 setTimeout(function () {
@@ -363,7 +362,7 @@ function triggerSendTextMessage(taskId, receiver, content, atUser) {
     receiverGlobal = receiver;
     contentGlobal = content;
     atUserGlobal = atUser
-    console.log("taskIdGlobal: " + taskIdGlobal + ", receiverGlobal: " + receiverGlobal + ", contentGlobal: " + contentGlobal + ", atUserGlobal: " + atUserGlobal) ;
+    console.log("taskIdGlobal: " + taskIdGlobal + ", receiverGlobal: " + receiverGlobal + ", contentGlobal: " + contentGlobal + ", atUserGlobal: " + atUserGlobal);
 
     textMessageAddr.add(0x08).writeU32(taskIdGlobal);
     sendTextMessageAddr.add(0x20).writeU32(taskIdGlobal);
@@ -463,8 +462,7 @@ setImmediate(AttachSendTextProto);
 
 // 拦截 SendTextProto 编码逻辑，注入自定义 Payload
 function attachSendTextProto() {
-    console.log("[+] proto注入拦截目标地址: " + protobufAddr);
-    textProtoX1PayloadAddr = Memory.alloc(1024);
+    textProtoX1PayloadAddr = Memory.alloc(2048);
     console.log("[+] Frida 分配的 Payload 地址: " + textProtoX1PayloadAddr);
 
     Interceptor.attach(protobufAddr, {
@@ -591,8 +589,6 @@ setImmediate(attachReq2buf);
 
 // 初始化进行内存的分配
 function setupSendImgMessageDynamic() {
-    console.log("[+] Starting setupSendImgMessageDynamic Dynamic Message Patching...");
-
     // 1. 动态分配内存块（按需分配大小）
     // 分配原则：字符串给 64-128 字节，结构体按实际大小分配
     imgCgiAddr = Memory.alloc(128);
@@ -617,12 +613,12 @@ function setupSendImgMessageDynamic() {
     sendImgMessageAddr.add(0x20).writeU32(taskIdGlobal);
     sendImgMessageAddr.add(0x28).writePointer(imgMessageAddr);
 
-    console.log(" [+] sendImgMessageAddr Object: ", hexdump(sendImgMessageAddr, {
-        offset: 0,
-        length: 48,
-        header: true,
-        ansi: true
-    }));
+    // console.log(" [+] sendImgMessageAddr Object: ", hexdump(sendImgMessageAddr, {
+    //     offset: 0,
+    //     length: 48,
+    //     header: true,
+    //     ansi: true
+    // }));
 
     // C. 构建 Message 结构体
     imgMessageAddr.add(0x00).writePointer(imgMessageCallbackFunc1);
@@ -647,15 +643,11 @@ function patchImgProtoBuf() {
         cw.flush();
     });
 
-    console.log("[+] Patching patchImgProtobufFunc1 " + patchImgProtobufFunc1 + " 成功.");
-
     Memory.patchCode(patchImgProtobufFunc2, 4, code => {
         const cw = new Arm64Writer(code, {pc: patchImgProtobufFunc2});
         cw.putNop();
         cw.flush();
     });
-
-    console.log("[+] Patching patchImgProtobufFunc2 " + patchImgProtobufFunc2 + " 成功.");
 
     Memory.patchCode(imgProtobufDeleteAddr, 4, code => {
         const cw = new Arm64Writer(code, {pc: imgProtobufDeleteAddr});
@@ -663,7 +655,8 @@ function patchImgProtoBuf() {
         cw.flush();
     });
 
-    console.log("[+] Patching imgProtobufDeleteAddr " + imgProtobufDeleteAddr + " 成功.");
+    console.log("[+] Patching patchImgProtobufFunc1 " + patchImgProtobufFunc1 + " 成功." + "[+] Patching patchImgProtobufFunc2 " + patchImgProtobufFunc2 + " 成功."
+        + " Patching imgProtobufDeleteAddr " + imgProtobufDeleteAddr + " 成功.");
 }
 
 
@@ -769,7 +762,6 @@ function triggerSendImgMessage(taskId, sender, receiver) {
 
 // 拦截 Protobuf 编码逻辑，注入自定义 Payload
 function attachProto() {
-    console.log("[+] proto注入拦截目标地址: " + imgProtoX1PayloadAddr);
     imgProtoX1PayloadAddr = Memory.alloc(1024);
     console.log("[+] Frida 分配的 Payload 地址: " + imgProtoX1PayloadAddr);
 

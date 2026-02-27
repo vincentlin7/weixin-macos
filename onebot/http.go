@@ -77,7 +77,7 @@ func SendHttpReq(msg map[string]interface{}) {
 		}
 	}()
 	
-	time.Sleep(1 * time.Second)
+	time.Sleep(time.Duration(config.SendInterval) * time.Second)
 	// 这里处理你的 X1 数据
 	jsonData, err := json.Marshal(msg["payload"])
 	if err != nil {

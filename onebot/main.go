@@ -80,6 +80,7 @@ type Config struct {
 	OnebotToken     string `json:"onebot_token"`
 	ImagePath       string `json:"image_path"`
 	ConnType        string `json:"conn_type"`
+	SendInterval    int    `json:"send_interval"`
 	
 	WechatConf string `json:"wechat_conf"`
 }
@@ -125,6 +126,7 @@ func initFlag() {
 	flag.StringVar(&config.ImagePath, "image_path", "", "图片路径: /Users/xxx/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/xxx/temp/xxx/2026-01/Img/")
 	flag.StringVar(&config.WechatConf, "wechat_conf", "../wechat_version/4_1_7_55_mac.json", "微信配置文件路径: ../wechat_version/4_1_6_12_mac.json")
 	flag.StringVar(&config.ConnType, "conn_type", "http", "连接类型: http | websocket")
+	flag.IntVar(&config.SendInterval, "send_interval", 1000, "发送间隔: ms")
 	
 	flag.Parse()
 	

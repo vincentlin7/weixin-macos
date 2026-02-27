@@ -30,7 +30,7 @@ func SendWorker() {
 }
 
 func SendWechatMsg(m *SendMsg) {
-	time.Sleep(1 * time.Second)
+	time.Sleep(time.Duration(config.SendInterval) * time.Millisecond)
 	currTaskId := atomic.AddInt64(&taskId, 1)
 	log.Printf("📩 收到任务: %d\n", currTaskId)
 	
