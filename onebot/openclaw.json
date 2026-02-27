@@ -1,0 +1,163 @@
+{
+  "meta": {
+    "lastTouchedVersion": "2026.2.24",
+    "lastTouchedAt": "2026-02-26T06:26:29.404Z"
+  },
+  "wizard": {
+    "lastRunAt": "2026-02-26T02:54:36.789Z",
+    "lastRunVersion": "2026.2.24",
+    "lastRunCommand": "onboard",
+    "lastRunMode": "local"
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "custom-api-deepseek-com": {
+        "baseUrl": "https://api.deepseek.com/v1",
+        "apiKey": "sk-xxx",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "deepseek-chat",
+            "name": "deepseek-chat (Custom Provider)",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 16000,
+            "maxTokens": 16000
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "custom-api-deepseek-com/deepseek-chat"
+      },
+      "models": {
+        "custom-api-deepseek-com/deepseek-chat": {
+          "alias": "deepseek-chat"
+        }
+      },
+      "workspace": "/Users/yincong/.openclaw/workspace",
+      "compaction": {
+        "mode": "safeguard"
+      },
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
+      }
+    }
+  },
+  "messages": {
+    "ackReactionScope": "group-mentions"
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "ownerDisplay": "raw"
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "hooks": {
+    "internal": {
+      "enabled": true,
+      "entries": {
+        "command-logger": {
+          "enabled": true
+        }
+      }
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "dmPolicy": "pairing",
+      "botToken": "8430228911:xxx",
+      "groupPolicy": "allowlist",
+      "streaming": "off"
+    },
+    "qq": {
+      "wsUrl": "ws://127.0.0.1:58080/ws",
+      "accessToken": "MuseBot",
+      "admins": "12345678,87654321",
+      "adminOnlyChat": false,
+      "notifyNonAdminBlocked": false,
+      "nonAdminBlockedMessage": "当前仅管理员可触发机器人。\n如需使用请联系管理员。",
+      "blockedNotifyCooldownMs": 10000,
+      "showProcessingStatus": true,
+      "processingStatusDelayMs": 500,
+      "processingStatusText": "输入中",
+      "allowedGroups": "10001,10002",
+      "blockedUsers": "999999",
+      "systemPrompt": "你是一个名为“人工智障”的QQ机器人，说话风格要风趣幽默。",
+      "historyLimit": 3,
+      "keywordTriggers": "小助手, 帮助",
+      "autoApproveRequests": true,
+      "enableGuilds": true,
+      "enableTTS": false,
+      "sharedMediaHostDir": "/Users/yourname/openclaw_qq/deploy/napcat/shared_media",
+      "sharedMediaContainerDir": "/openclaw_media",
+      "rateLimitMs": 1000,
+      "formatMarkdown": true,
+      "antiRiskMode": false,
+      "maxMessageLength": 4000
+    }
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "loopback",
+    "auth": {
+      "mode": "token",
+      "token": "xxx"
+    },
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    },
+    "nodes": {
+      "denyCommands": [
+        "camera.snap",
+        "camera.clip",
+        "screen.record",
+        "calendar.add",
+        "contacts.add",
+        "reminders.add"
+      ]
+    }
+  },
+  "plugins": {
+    "allow": [
+      "qq",
+      "telegram"
+    ],
+    "entries": {
+      "telegram": {
+        "enabled": true
+      },
+      "qq": {
+        "enabled": true
+      }
+    },
+    "installs": {
+      "qq": {
+        "source": "path",
+        "sourcePath": "/Users/xxx/go/src/github.com/yincongcyincong/openclaw/extensions/qq",
+        "installPath": "/Users/xxx/.openclaw/extensions/qq",
+        "version": "1.0.0",
+        "installedAt": "2026-02-26T03:12:47.749Z"
+      }
+    }
+  }
+}

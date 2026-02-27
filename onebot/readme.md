@@ -37,3 +37,23 @@ curl -i -X POST \
 {"status":"ok"}
 
 ```
+
+## 接入openclaw
+```
+# 进入插件目录
+cd openclaw/extensions
+# 克隆仓库
+git clone https://github.com/constansino/openclaw_qq.git qq
+# 安装依赖并构建
+cd ../..
+pnpm install && pnpm build
+# 安装openclaw命令
+npm install -g openclaw@latest
+# 根据 https://github.com/constansino/openclaw_qq 把extension放到extensions目录下
+openclaw plugins install ./extensions/qq
+# 启动openclaw
+openclaw gateway run
+# 启动onebot
+./onebot -wechat_pid=18835 -image_path='/Users/xxx/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/wxid_xxx/temp/xxx/2026-01/Img/ -conn_type=websocket
+```
+

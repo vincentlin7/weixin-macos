@@ -1077,8 +1077,14 @@ function setReceiver() {
     // 3. 开始拦截
     Interceptor.attach(buf2RespAddr, {
         onEnter: function (args) {
-
             const currentPtr = this.context.x1;
+            // console.log(" [+] currentPtr: ", hexdump(currentPtr, {
+            //     offset: 0,
+            //     length: 512,
+            //     header: true,
+            //     ansi: true
+            // }));
+
             let start = 0x1e;
             let senderLen = currentPtr.add(start).readU8();
             if (senderLen !== 0x14 && senderLen !== 0x13) {
@@ -1114,14 +1120,12 @@ function setReceiver() {
             var messages = [];
             var senderNickname = ""
 
-            let splitIndex = content.indexOf(':')
-            let pureContent = content.substring(splitIndex + 1).trim();
-
             if (sender.includes("@chatroom")) {
                 msgType = "group"
                 groupId = sender
 
-                senderUser = content.substring(0, splitIndex).trim();
+                let splitIndex = content?.indexOf(':')
+                let pureContent = content?.substring(splitIndex + 1).trim();
                 const parts = pureContent.split('\u2005');
                 for (let part of parts) {
                     part = part.trim();
@@ -1145,23 +1149,31 @@ function setReceiver() {
                 }
 
                 // 处理用户的名称
-                splitIndex = userContent.indexOf(':')
+                splitIndex = userContent?.indexOf(':')
                 if (splitIndex === -1) {
-                    splitIndex = userContent.indexOf('在群聊中@了你')
-                    senderNickname = userContent.substring(0, splitIndex).trim();
+                    splitIndex = userContent?.indexOf('在群聊中@了你')
+                    senderNickname = userContent?.substring(0, splitIndex).trim();
                 } else {
-                    senderNickname = userContent.substring(0, splitIndex).trim();
+                    senderNickname = userContent?.substring(0, splitIndex).trim();
+                }
+                if (!senderNickname) {
+                    senderNickname = sender
                 }
 
             } else {
                 // 处理用户的名称
-                const splitIndex = userContent.indexOf(':')
-                senderNickname = userContent.substring(0, splitIndex).trim();
-                messages.push({type: "text", data: {text: pureContent}});
+                const splitIndex = userContent?.indexOf(':')
+                senderNickname = userContent?.substring(0, splitIndex).trim();
+                if (!senderNickname) {
+                    senderNickname = sender
+                }
+                messages.push({type: "text", data: {text: content}});
             }
 
             const msgId = generateAESKey()
             send({
+                time: Date.now(),
+                post_type: "message",
                 message_type: msgType,
                 user_id: senderUser, // 发送人的 ID
                 self_id: selfId, // 接收人的 ID
@@ -1171,6 +1183,7 @@ function setReceiver() {
                 raw: {peerUid: msgId},
                 message: messages,
                 sender: {user_id: senderUser, nickname: senderNickname},
+                raw_message: ""
             })
         },
     });
