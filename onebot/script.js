@@ -83,7 +83,7 @@ function generateAESKey() {
 }
 
 function getProtobufRawBytes(pBuffer, scanSize) {
-    const tags = [0x12, 0x1A, 0x2A, 0x52, 0x5A];
+    const tags = [0x12, 0x1A, 0x2A, 0x42, 0x52, 0x5A];
     let uint8Array;
 
     try {
@@ -120,7 +120,11 @@ function getProtobufRawBytes(pBuffer, scanSize) {
                 // 2. 截取原始 Byte 数据
                 if (i + length <= uint8Array.length) {
                     let rawData = uint8Array.slice(i, i + length);
-                    finalResults.push(getCleanString(rawData));
+                    if (targetTag === 0x42) {
+                        finalResults.push(rawData);
+                    } else {
+                        finalResults.push(getCleanString(rawData));
+                    }
                     i += length;
                 } else {
                     finalResults.push(null); // 长度越界
@@ -158,6 +162,8 @@ function getCleanString(uint8Array) {
                 // 这种通常是特殊拉丁字母等，按需保留
                 var charCode = ((c & 0x1F) << 6) | (c2 & 0x3F);
                 out += String.fromCharCode(charCode);
+            } else {
+                i--;
             }
         }
         // 3. 处理三字节 (1110xxxx 10xxxxxx 10xxxxxx) -> 绝大多数汉字在此
@@ -175,6 +181,8 @@ function getCleanString(uint8Array) {
                 ) {
                     out += String.fromCharCode(charCode);
                 }
+            } else {
+                i -= 2;
             }
         } else if ((c & 0xF8) === 0xF0 && i + 2 < len) {
             var c2 = uint8Array[i++];
@@ -189,6 +197,8 @@ function getCleanString(uint8Array) {
                     // 使用 fromCodePoint 处理 4 字节字符
                     out += String.fromCodePoint(codePoint);
                 }
+            } else {
+                i -= 3;
             }
         }
     }
@@ -1070,13 +1080,6 @@ function setReceiver() {
     Interceptor.attach(buf2RespAddr, {
         onEnter: function (args) {
             const currentPtr = this.context.x1;
-            // console.log(" [+] currentPtr: ", hexdump(currentPtr, {
-            //     offset: 0,
-            //     length: 512,
-            //     header: true,
-            //     ansi: true
-            // }));
-
             let start = 0x1e;
             let senderLen = currentPtr.add(start).readU8();
             if (senderLen !== 0x14 && senderLen !== 0x13) {
@@ -1088,15 +1091,22 @@ function setReceiver() {
             }
 
             const x2 = this.context.x2.toInt32();
+            // console.log(" [+] currentPtr: ", hexdump(currentPtr, {
+            //     offset: 0,
+            //     length: x2,
+            //     header: true,
+            //     ansi: true
+            // }));
             const fields = getProtobufRawBytes(currentPtr, x2)
 
             const sender = fields[0]
             const receiver = fields[1]
             const content = fields[2]
-            const xml = fields[3]
-            const userContent = fields[4]
+            const mediaContent = fields[3]
+            const xml = fields[4]
+            const userContent = fields[5]
 
-            if (sender === "" || receiver === "" || content === "" || xml === "") {
+            if (sender === "" || receiver === "" || content === "") {
                 console.log("字段缺失，无法解析 sender:" + sender + " receiver:" + receiver + hexdump(currentPtr, {
                     length: x2,
                     header: true,
@@ -1116,8 +1126,8 @@ function setReceiver() {
                 msgType = "group"
                 groupId = sender
 
-                let splitIndex = content?.indexOf(':')
-                let pureContent = content?.substring(splitIndex + 1).trim();
+                let splitIndex = content.indexOf(':')
+                let pureContent = content.substring(splitIndex + 1).trim();
                 const parts = pureContent.split('\u2005');
                 for (let part of parts) {
                     part = part.trim();
@@ -1175,7 +1185,10 @@ function setReceiver() {
                 raw: {peerUid: msgId},
                 message: messages,
                 sender: {user_id: senderUser, nickname: senderNickname},
-                raw_message: ""
+                msgsource: xml,
+                raw_message: content,
+                // media: mediaContent,
+                show_content:userContent
             })
         },
     });
