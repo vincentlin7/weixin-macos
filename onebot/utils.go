@@ -192,7 +192,7 @@ func HandleMsg(jsonData []byte) ([]byte, error) {
 						downloadReq := downloadMsgInter.(*DownloadRequest)
 						// 进行重试，最后一次进行兜底
 						if time.Now().UnixMilli()-downloadReq.LastAppendTime < 500 && i < 2 {
-							Info("等待图片下载完成", "times", i, "url", fileMsg.Image.ThumbURL[:20])
+							Info("等待图片下载完成", "times", i, "url", fileMsg.Image.ThumbURL)
 							time.Sleep(2 * time.Second)
 							continue
 						}

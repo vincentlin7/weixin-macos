@@ -399,13 +399,3 @@ function testGetProtobufRawBytes() {
     const results = getProtobufRawBytes(pBuffer, rawMemoryData.length);
     console.log(results);
 }
-
-function patchString(addr, plainStr) {
-    const bytes = [];
-    for (let i = 0; i < plainStr.length; i++) {
-        bytes.push(plainStr.charCodeAt(i));
-    }
-
-    addr.writeByteArray(bytes);
-    addr.add(bytes.length).writeU8(0);
-}

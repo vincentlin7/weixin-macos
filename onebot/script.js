@@ -285,7 +285,7 @@ var uploadGetCallbackWrapperFuncAddr = baseAddr.add({{.uploadGetCallbackWrapperF
 var uploadOnCompleteAddr = baseAddr.add({{.uploadOnCompleteAddr}});
 var uploadOnCompleteFuncAddr = baseAddr.add({{.uploadOnCompleteFuncAddr}});
 var downloadImagAddr = baseAddr.add({{.downloadImagAddr}});
-var hdPicDownloadAddr = baseAddr.add(0x494652C)
+var hdPicDownloadAddr = baseAddr.add({{.hdPicDownloadAddr}})
 
 var uploadImageX1;
 var imgCgiAddr = ptr(0);

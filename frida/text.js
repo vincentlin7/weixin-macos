@@ -78,9 +78,13 @@ function patchString(addr, plainStr) {
 // -------------------------全局变量分区-------------------------
 
 // 文本消息全局变量
-var protobufAddr = baseAddr.add(0x24665A0);
-var patchTextProtobufAddr = baseAddr.add(0x246657C);
-var PatchTextProtobufDeleteAddr = baseAddr.add(0x24665B8);
+var textCallbackFuncAddr = baseAddr.add(0x246655C);
+var protobufAddr = textCallbackFuncAddr.add(0x44);
+var patchTextProtobufAddr = textCallbackFuncAddr.add(0x20);
+var patchTextProtobufByte
+var patchTextProtobufDeleteAddr = textCallbackFuncAddr.add(0x5C);
+var patchTextProtobufDeleteByte
+
 var textCgiAddr = ptr(0);
 var sendTextMessageAddr = ptr(0);
 var textMessageAddr = ptr(0);
@@ -155,33 +159,50 @@ function setupSendTextMessageDynamic() {
     }));
 
     console.log("[+] Dynamic Memory Setup Complete. - Message Object: " + textMessageAddr);
+
+    patchTextProtobufByte = patchTextProtobufAddr.readByteArray(4);
+
+    patchTextProtobufDeleteByte = patchTextProtobufDeleteAddr.readByteArray(4);
 }
 
 setImmediate(setupSendTextMessageDynamic);
 
 
 function patchTextProtoBuf() {
-    Memory.patchCode(patchTextProtobufAddr, 4, code => {
-        const cw = new Arm64Writer(code, {pc: patchTextProtobufAddr});
-        cw.putNop();
-        cw.flush();
-    });
 
-    console.log("[+] Patching patchTextProtobufAddr " + patchTextProtobufAddr + " 成功.");
+    Interceptor.attach(textCallbackFuncAddr, {
+        onEnter: function (args) {
+            var firstValue = this.context.sp.readU32();
+            console.log("firstValue: " + firstValue + "taskIdGlobal:" + taskIdGlobal);
+            if (firstValue === taskIdGlobal) {
+                Memory.patchCode(patchTextProtobufAddr, 4, code => {
+                    const cw = new Arm64Writer(code, {pc: patchTextProtobufAddr});
+                    cw.putNop();
+                    cw.flush();
+                });
+                Memory.patchCode(patchTextProtobufDeleteAddr, 4, code => {
+                    const cw = new Arm64Writer(code, {pc: patchTextProtobufDeleteAddr});
+                    cw.putNop();
+                    cw.flush();
+                });
+            } else {
+                Memory.patchCode(patchTextProtobufAddr, 4, code => {
+                    const cw = new Arm64Writer(code, {pc: patchTextProtobufAddr});
+                    cw.putBytes(new Uint8Array(patchTextProtobufByte));
+                    cw.flush();
+                });
+                Memory.patchCode(patchTextProtobufDeleteAddr, 4, code => {
+                    const cw = new Arm64Writer(code, {pc: patchTextProtobufDeleteAddr});
+                    cw.putBytes(new Uint8Array(patchTextProtobufDeleteByte));
+                    cw.flush();
+                });
+            }
+        }
+    })
 
-    Memory.patchCode(PatchTextProtobufDeleteAddr, 4, code => {
-        const cw = new Arm64Writer(code, {pc: PatchTextProtobufDeleteAddr});
-        cw.putNop();
-        cw.flush();
-    });
-
-    console.log("[+] Patching PatchTextProtobufDeleteAddr " + PatchTextProtobufDeleteAddr + " 成功.");
 }
 
-setTimeout(function () {
-    console.log("[+] 3秒等待结束，准备执行 Patch...");
-    patchTextProtoBuf();
-}, 3000);
+setImmediate(patchTextProtoBuf);
 
 function triggerSendTextMessage(taskId, receiver, content, atUser) {
     console.log("[+] Manual Trigger Started...");
@@ -197,7 +218,7 @@ function triggerSendTextMessage(taskId, receiver, content, atUser) {
     receiverGlobal = receiver;
     contentGlobal = content;
     atUserGlobal = atUser
-    console.log("taskIdGlobal: " + taskIdGlobal + ", receiverGlobal: " + receiverGlobal + ", contentGlobal: " + contentGlobal + ", atUserGlobal: " + atUserGlobal) ;
+    console.log("taskIdGlobal: " + taskIdGlobal + ", receiverGlobal: " + receiverGlobal + ", contentGlobal: " + contentGlobal + ", atUserGlobal: " + atUserGlobal);
 
     textMessageAddr.add(0x08).writeU32(taskIdGlobal);
     sendTextMessageAddr.add(0x20).writeU32(taskIdGlobal);
@@ -325,8 +346,7 @@ function attachSendTextProto() {
             const htmlUpperPart = [0x3C, 0x6D, 0x73, 0x67, 0x73, 0x6F, 0x75, 0x72, 0x63, 0x65, 0x3E]
             let atUserHeader = []
             if (atUserGlobal) {
-                atUserHeader = atUserHeader.concat([0x3C, 0x61, 0x74, 0x75, 0x73, 0x65, 0x72, 0x6c, 0x69, 0x73, 0x74, 0x3e]).
-                concat(stringToHexArray(atUserGlobal)).concat([0x3C, 0x2F, 0x61, 0x74, 0x75, 0x73, 0x65, 0x72, 0x6C, 0x69, 0x73, 0x74, 0x3E])
+                atUserHeader = atUserHeader.concat([0x3C, 0x61, 0x74, 0x75, 0x73, 0x65, 0x72, 0x6c, 0x69, 0x73, 0x74, 0x3e]).concat(stringToHexArray(atUserGlobal)).concat([0x3C, 0x2F, 0x61, 0x74, 0x75, 0x73, 0x65, 0x72, 0x6C, 0x69, 0x73, 0x74, 0x3E])
             }
             const htmlLowerPart = [0x3C, 0x61, 0x6C, 0x6E, 0x6F,
                 0x64, 0x65, 0x3E, 0x3C, 0x66, 0x72, 0x3E, 0x31,
@@ -343,9 +363,7 @@ function attachSendTextProto() {
                 htmlUpperPart.length + atUserHeader.length + htmlLowerPart.length)
 
             // 合并数组
-            const finalPayload = type.concat(valueLen).concat(receiverHeader).concat(receiverProto).concat(contentHeader).
-            concat(contentProto).concat(tsHeader).concat(tsBytes).concat(msgIdHeader).concat(msgId).concat(htmlHeader).concat(htmlUpperPart).
-            concat(atUserHeader).concat(htmlLowerPart);
+            const finalPayload = type.concat(valueLen).concat(receiverHeader).concat(receiverProto).concat(contentHeader).concat(contentProto).concat(tsHeader).concat(tsBytes).concat(msgIdHeader).concat(msgId).concat(htmlHeader).concat(htmlUpperPart).concat(atUserHeader).concat(htmlLowerPart);
 
             textProtoX1PayloadAddr.writeByteArray(finalPayload);
             this.context.x1 = textProtoX1PayloadAddr;
