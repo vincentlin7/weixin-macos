@@ -40,6 +40,7 @@ var replyReferMsgContent = ""; // 被引用消息的内容
 var replyReferMsgType = 1; // 被引用消息的类型
 var replyReferMsgSender = ""; // 被引用消息的发送者
 var replyReferMsgId = ""; // 被引用消息的ID
+var replyReferMsgCreateTime = ""; // 被引用消息的创建时间
 var replyChatRoom = ""; // 是否是群聊
 var replyFromUser = ""; // 回复者wxid
 
@@ -181,7 +182,7 @@ setImmediate(attachProto);
 
 
 // -------------------------触发发送Reply消息-------------------------
-function triggerSendReplyMessage(taskId, sender, receiver, content, referMsgContent, referMsgType, referMsgSender, referMsgId, chatRoom) {
+function triggerSendReplyMessage(taskId, sender, receiver, content, referMsgContent, referMsgType, referMsgSender, referMsgId, chatRoom, referMsgCreateTime) {
     console.log("[+] Manual Trigger Reply Message Started...");
 
     if (!taskId || !receiver || !sender) {
@@ -200,6 +201,7 @@ function triggerSendReplyMessage(taskId, sender, receiver, content, referMsgCont
     replyReferMsgType = referMsgType || 1;
     replyReferMsgSender = referMsgSender || sender;
     replyReferMsgId = referMsgId || generateRandomMsgId();
+    replyReferMsgCreateTime = referMsgCreateTime || Math.floor(Date.now() / 1000).toString();
     replyChatRoom = chatRoom || "";
     replyFromUser = sender;
 
@@ -415,47 +417,6 @@ function buildReplyAppmsgXml() {
     // 构建appmsg XML内容
     // type=57 是reply消息类型
 
-    // 构建msgsource内容（转义后的XML）
-    const msgsourceContent = "<msgsource>" +
-        "<alnode><fr>1</fr></alnode>" +
-        "<sec_msg_node>" +
-        "<uuid>" + generateUuid() + "</uuid>" +
-        "<risk-file-flag></risk-file-flag>" +
-        "<risk-file-md5-list></risk-file-md5-list>" +
-        "</sec_msg_node>" +
-        "</msgsource>";
-
-    // 构建content内容（转义后的msg）
-    const msgContent = "<msg>" +
-        "<appmsg appid=\"\" sdkver=\"0\">" +
-        "<title>" + escapeXml(replyContent) + "</title>" +
-        "<des></des>" +
-        "<action></action>" +
-        "<type>57</type>" +
-        "<showtype>0</showtype>" +
-        "<soundtype>0</soundtype>" +
-        "<mediatagname></mediatagname>" +
-        "<messageext></messageext>" +
-        "<messageaction></messageaction>" +
-        "<content></content>" +
-        "<contentattr>0</contentattr>" +
-        "<url></url>" +
-        "<lowurl></lowurl>" +
-        "<dataurl></dataurl>" +
-        "<lowdataurl></lowdataurl>" +
-        "<songalbumurl></songalbumurl>" +
-        "<songlyric></songlyric>" +
-        "<template_id></template_id>" +
-        "<appattach><totallen>0</totallen><attachid></attachid><emoticonmd5></emoticonmd5><fileext></fileext><aeskey></aeskey></appattach>" +
-        "<extinfo></extinfo>" +
-        "<sourceusername></sourceusername>" +
-        "<sourcedisplayname></sourcedisplayname>" +
-        "<thumburl></thumburl>" +
-        "<md5></md5>" +
-        "<statextstr></statextstr>" +
-        "</appmsg>" +
-        "</msg>";
-
     let xml = "<appmsg appid=\"\" sdkver=\"0\">";
     xml += "<title>" + escapeXml(replyContent) + "</title>";
     xml += "<des></des>";
@@ -490,6 +451,9 @@ function buildReplyAppmsgXml() {
             xml += "<chatusr>" + escapeXml(replyReferMsgSender) + "</chatusr>";
         }
         xml += "<type>" + replyReferMsgType + "</type>";
+        xml += "<createtime>" + replyReferMsgCreateTime + "</createtime>";
+        xml += "<msgsource>" + escapeXml("<msgsource><alnode><fr>1</fr></alnode></msgsource>") + "</msgsource>";
+        xml += "<displayname></displayname>";
         xml += "<svrid>" + escapeXml(replyReferMsgId || generateRandomMsgId()) + "</svrid>";
         xml += "<fromusr>" + escapeXml(replyReferMsgSender) + "</fromusr>";
         xml += "<content>" + escapeXml(replyReferMsgContent) + "</content>";
@@ -498,30 +462,8 @@ function buildReplyAppmsgXml() {
 
     xml += "</appmsg>";
 
-    // 添加msgsource（转义后的XML）
-    xml += "<msgsource>" + escapeXml(msgsourceContent) + "</msgsource>";
-
-    // 添加displayname
-    xml += "<displayname></displayname>";
-
-    // 添加svrid
-    xml += "<svrid>" + generateRandomMsgId() + "</svrid>";
-
-    // 添加fromusr
-    xml += "<fromusr>" + escapeXml(senderGlobal) + "</fromusr>";
-
-    // 添加content（转义后的msg）
-    xml += "<content>" + escapeXml(msgContent) + "</content>";
-
     // 添加fromusername
     xml += "<fromusername>" + escapeXml(senderGlobal) + "</fromusername>";
-
-    // 添加appinfo
-    xml += "<appinfo>";
-    xml += "<version>0</version>";
-    xml += "<appname></appname>";
-    xml += "<isforceupdate>0</isforceupdate>";
-    xml += "</appinfo>";
 
     return xml;
 }
