@@ -1217,9 +1217,9 @@ function attachProto() {
                 md5Key = videoUploadInfo.md5Key;
                 videoId = videoUploadInfo.videoIdentity;
                 targetId = videoUploadInfo.targetId;
-            }  else {
-                console.error("[!] 无法获取视频上传信息")
-                return
+            } else {
+                console.error("[!] 无法获取视频上传信息");
+                return;
             }
 
             const type = [0x0A, 0x3f, 0x0A, 0x01, 0x00]
@@ -1260,14 +1260,14 @@ function attachProto() {
                 0x65, 0x3E, 0x3C, 0x2F, 0x6D, 0x73, 0x67, 0x73, 0x6F, 0x75, 0x72, 0x63,
                 0x65, 0x3E]
 
-            const cdnHeader = [0x82, 0x01, 0xb2, 0x01]
+            const cdnHeader = [0x82, 0x01, ...toVarint(cdnKey.length)]
             // 3057 开头的cdn key
             const cdn = stringToHexArray(cdnKey);
 
             const aesKeyHeader = [0x8A, 0x01, 0x20]
             const aesKeyBytes = stringToHexArray(aesKey)
 
-            const randomId5 = [0x90, 0x01, 0x01, 0x9A, 0x01, 0xB2, 0x01]
+            const randomId5 = [0x90, 0x01, 0x01, 0x9A, 0x01, ...toVarint(cdnKey.length)]
 
             const cdn2 = stringToHexArray(cdnKey)
 
@@ -1286,7 +1286,7 @@ function attachProto() {
             const md5Key2Header = [0x82, 0x03, 0x20]
             const md5Key2 = stringToHexArray(md5Key)
 
-            const cdn3Header = [0x8A, 0x03, 0xB2, 0x01]
+            const cdn3Header = [0x8A, 0x03, ...toVarint(cdnKey.length)]
             const cdn3 = stringToHexArray(cdnKey)
 
             const randomId8 = [0x92, 0x03, 0x20]
