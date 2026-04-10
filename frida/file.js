@@ -134,10 +134,10 @@ var cndOnCompleteAddr = baseAddr.add(0x3842974);
 var imgMessageCallbackFunc1 = baseAddr.add(0x89FCFC8);
 var videoMessageCallbackFunc1 = baseAddr.add(0x89FED48);
 
-var uploadGetCallbackWrapperAddr = baseAddr.add(0x4b6c350);
-var uploadGetCallbackWrapperFuncAddr = baseAddr.add(0x3841DC4);
+var uploadGetCallbackWrapperAddr = baseAddr.add(0x4B6C350);
+var uploadGetCallbackWrapperFuncAddr = baseAddr.add(0x38421C0);
 var uploadOnCompleteAddr = baseAddr.add(0x4B6C94C);
-var uploadOnCompleteFuncAddr = baseAddr.add(0x3841DC4);
+var uploadOnCompleteFuncAddr = baseAddr.add(0x38433A4);
 
 var uploadImageX1 = ptr(0);
 var imgCgiAddr = ptr(0);
