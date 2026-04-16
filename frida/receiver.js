@@ -5,11 +5,11 @@ if (!baseAddr) {
 }
 console.log("[+] WeChat base address: " + baseAddr);
 
-var buf2RespAddr = baseAddr.add(0x38aac10)
-var downloadImagAddr = baseAddr.add(0x4cc261c) // image_download
-var downloadFileAddr = baseAddr.add(0x4c613a4) // c2c_download
-var downloadVideoAddr = baseAddr.add(0x4c83128) // hdvideo_streaming
-var startDownloadMedia = baseAddr.add(0x4b9f500)
+var buf2RespAddr = baseAddr.add(0x38b0a78)
+var downloadImagAddr = baseAddr.add(0x4cc945c) // image_download
+var downloadFileAddr = baseAddr.add(0x4c681e4) // c2c_download
+var downloadVideoAddr = baseAddr.add(0x4c89f68) // hdvideo_streaming
+var startDownloadMedia = baseAddr.add(0x4ba6340)
 
 var downloadGlobalX0;
 var downloadFileX1 = ptr(0)
