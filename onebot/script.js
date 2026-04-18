@@ -379,6 +379,10 @@ function pushVideoUploadInfo(info) {
 
 // -------------------------上传队列 end-------------------------
 
+// 文本消息发送队列
+var textMessageQueue = [];
+var isSendingText = false;
+
 // 发送消息的全局变量
 var taskIdGlobal = 0x20000090 // 最好比较大，不和原始的微信消息重复
 var receiverGlobal = "wxid_"
@@ -491,13 +495,38 @@ function triggerSendTextMessage(taskId, receiver, content, atUser) {
         return "fail";
     }
 
+    if (!triggerX0 || !triggerX1Payload) {
+        console.error("[!] triggerX0 或 triggerX1Payload 尚未初始化，请等待 hook 捕获");
+        return "fail";
+    }
+
+    // 入队，由队列调度发送
+    textMessageQueue.push({taskId: taskId, receiver: receiver, content: content, atUser: atUser});
+    console.log("[+] 文本消息已入队，当前队列长度:", textMessageQueue.length);
+
+    if (!isSendingText) {
+        processNextTextMessage();
+    }
+
+    return "ok";
+}
+
+function processNextTextMessage() {
+    if (textMessageQueue.length === 0) {
+        isSendingText = false;
+        return;
+    }
+
+    isSendingText = true;
+    var msg = textMessageQueue.shift();
+
     // 获取当前时间戳 (秒)
     const timestamp = Math.floor(Date.now() / 1000);
     lastSendTime = timestamp
-    taskIdGlobal = taskId;
-    receiverGlobal = receiver;
-    contentGlobal = content;
-    atUserGlobal = atUser
+    taskIdGlobal = msg.taskId;
+    receiverGlobal = msg.receiver;
+    contentGlobal = msg.content;
+    atUserGlobal = msg.atUser
     console.log("taskIdGlobal: " + taskIdGlobal + ", receiverGlobal: " + receiverGlobal + ", contentGlobal: " + contentGlobal + ", atUserGlobal: " + atUserGlobal);
 
     textMessageAddr.add(0x08).writeU32(taskIdGlobal);
@@ -712,6 +741,10 @@ function attachReq2buf() {
             send({
                 type: "finish",
             })
+
+            // 处理文本消息队列中的下一条
+            isSendingText = false;
+            processNextTextMessage();
         }
     });
 }
@@ -902,6 +935,11 @@ function triggerSendImgMessage(taskId, sender, receiver) {
         return "fail";
     }
 
+    if (!triggerX0 || !triggerX1Payload) {
+        console.error("[!] triggerX0 或 triggerX1Payload 尚未初始化，请等待 hook 捕获");
+        return "fail";
+    }
+
     // 获取当前时间戳 (秒)
     const timestamp = Math.floor(Date.now() / 1000);
     lastSendTime = timestamp
@@ -989,6 +1027,11 @@ function triggerSendVideoMessage(taskId, sender, receiver) {
     console.log("[+] Manual Trigger Started...");
     if (!taskId || !receiver || !sender) {
         console.error("[!] taskId or receiver or sender is empty!");
+        return "fail";
+    }
+
+    if (!triggerX0 || !triggerX1Payload) {
+        console.error("[!] triggerX0 或 triggerX1Payload 尚未初始化，请等待 hook 捕获");
         return "fail";
     }
 
@@ -1322,6 +1365,11 @@ setImmediate(attachProto);
 
 
 function triggerUploadImg(receiver, md5, imagePath) {
+    if (uploadGlobalX0.equals(ptr(0))) {
+        console.error("[!] uploadGlobalX0 尚未初始化，请等待 hook 捕获");
+        return "fail";
+    }
+
     const payload = [
         0x20, 0x05, 0x33, 0x8C, 0x0B, 0x00, 0x00, 0x00, // 函数 10802b8b0 的指针
         0x00, 0x05, 0x33, 0x8C, 0x0B, 0x00, 0x00, 0x00, // 函数 107fd5908 的指针
@@ -1430,6 +1478,11 @@ function triggerUploadImg(receiver, md5, imagePath) {
 }
 
 function triggerUploadVideo(receiver, md5, videoPath) {
+    if (uploadGlobalX0.equals(ptr(0))) {
+        console.error("[!] uploadGlobalX0 尚未初始化，请等待 hook 捕获");
+        return "fail";
+    }
+
     const payload = [
         0x20, 0x05, 0x33, 0x8C, 0x0B, 0x00, 0x00, 0x00, // 函数 10802b8b0 的指针
         0x00, 0x05, 0x33, 0x8C, 0x0B, 0x00, 0x00, 0x00, // 函数 107fd5908 的指针
@@ -1897,6 +1950,11 @@ setImmediate(setReceiver)
 
 // fileType:  HdImage => 1,Image => 2, thumbImage => 3, Video => 4, File => 5,
 function triggerDownload(receiver, cdnUrl, aesKey, filePath, fileType) {
+    if (!downloadGlobalX0) {
+        console.error("[!] downloadGlobalX0 尚未初始化，请等待 hook 捕获");
+        return "fail";
+    }
+
     const downloadMediaPayload = [
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 0x00
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
