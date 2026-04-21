@@ -369,12 +369,10 @@ function getVideoUploadInfo() {
 
 function pushImageUploadInfo(info) {
     imageUploadQueue.push(info);
-    console.log("[+] 图片上传信息已入队，当前队列长度:", imageUploadQueue.length);
 }
 
 function pushVideoUploadInfo(info) {
     videoUploadQueue.push(info);
-    console.log("[+] 视频上传信息已入队，当前队列长度:", videoUploadQueue.length);
 }
 
 // -------------------------上传队列 end-------------------------
@@ -399,7 +397,7 @@ const fileCp = generateBytes(16)
 // -------------------------发送文本消息分区-------------------------
 // 初始化进行内存的分配
 function setupSendTextMessageDynamic() {
-    console.log("[+] Starting Dynamic Message Patching...");
+    // 动态分配内存
 
     // 1. 动态分配内存块（按需分配大小）
     // 分配原则：字符串给 64-128 字节，结构体按实际大小分配
@@ -440,7 +438,6 @@ function setupSendTextMessageDynamic() {
     //     ansi: true
     // }));
 
-    console.log("[+] Dynamic Memory Setup Complete. - Message Object: " + textMessageAddr);
     patchTextProtobufByte = patchTextProtobufAddr.readByteArray(4);
     patchTextProtobufDeleteByte = patchTextProtobufDeleteAddr.readByteArray(4);
 }
@@ -502,8 +499,6 @@ function triggerSendTextMessage(taskId, receiver, content, atUser) {
 
     // 入队，由队列调度发送
     textMessageQueue.push({taskId: taskId, receiver: receiver, content: content, atUser: atUser});
-    console.log("[+] 文本消息已入队，当前队列长度:", textMessageQueue.length);
-
     if (!isSendingText) {
         processNextTextMessage();
     }
@@ -527,7 +522,7 @@ function processNextTextMessage() {
     receiverGlobal = msg.receiver;
     contentGlobal = msg.content;
     atUserGlobal = msg.atUser
-    console.log("taskIdGlobal: " + taskIdGlobal + ", receiverGlobal: " + receiverGlobal + ", contentGlobal: " + contentGlobal + ", atUserGlobal: " + atUserGlobal);
+    console.log("triggerSendTextMessage: receiver=" + receiverGlobal);
 
     textMessageAddr.add(0x08).writeU32(taskIdGlobal);
     sendTextMessageAddr.add(0x20).writeU32(taskIdGlobal);
@@ -594,7 +589,6 @@ function processNextTextMessage() {
     triggerX1Payload.add(0x190).writePointer(triggerX1Payload.add(0x198));
     sendMsgType = "text"
 
-    console.log("finished init text payload")
     const MMStartTask = new NativeFunction(sendFuncAddr, 'int64', ['pointer', 'pointer']);
 
     // 5. 调用函数
@@ -616,7 +610,7 @@ function AttachSendFunc() {
 
             triggerX0 = this.context.x0;
             triggerX1Payload = this.context.x1;
-            console.log(`[+] 捕获到 StartTask 调用，X0地址：${triggerX0}, Payload 地址: ${triggerX1Payload}`);
+            console.log(`[+] 捕获到 StartTask 调用，X0：${triggerX0}, Payload: ${triggerX1Payload}`);
         }
     })
 }
@@ -626,7 +620,7 @@ setImmediate(AttachSendFunc);
 // 拦截 SendTextProto 编码逻辑，注入自定义 Payload
 function attachSendTextProto() {
     textProtoX1PayloadAddr = Memory.alloc(3096);
-    console.log("[+] Frida 分配的 Payload 地址: " + textProtoX1PayloadAddr);
+    console.log("[+] Frida Payload 地址: " + textProtoX1PayloadAddr);
 
     Interceptor.attach(protobufAddr, {
         onEnter: function (args) {
@@ -637,7 +631,7 @@ function attachSendTextProto() {
                 console.log("[+] Protobuf 拦截未命中，跳过...");
                 return;
             }
-            console.log(`[+] 正在注入 Protobuf Payload content: ${contentGlobal}, receiver: ${receiverGlobal}, atUser: ${atUserGlobal}`);
+            console.log(`[+] 注入 Protobuf: receiver=${receiverGlobal}`);
 
             const type = [0x08, 0x01, 0x12]
             const receiverHeader = [0x0A, receiverGlobal.length + 2, 0x0A, receiverGlobal.length];
@@ -692,21 +686,14 @@ setImmediate(attachSendTextProto);
 
 // -------------------------Req2Buf公共部分分区-------------------------
 function attachReq2buf() {
-    console.log("[+] Target Req2buf enter Address: " + req2bufEnterAddr);
-
-    // 2. 开始拦截
     Interceptor.attach(req2bufEnterAddr, {
         onEnter: function (args) {
             if (!this.context.x1.equals(taskIdGlobal)) {
                 return;
             }
 
-            console.log("[+] 已命中目标Req2Buf地址 taskId:" + taskIdGlobal + "base:" + baseAddr);
-
-            // 3. 获取 X24 寄存器的值
             const x24_base = this.context.x24;
             insertMsgAddr = x24_base.add(0x60);
-            console.log("[+] 当前 Req2Buf X24 基址: " + x24_base + " sendMsgType:" + sendMsgType);
 
             if (sendMsgType === "text") {
                 insertMsgAddr.writePointer(sendTextMessageAddr);
@@ -725,14 +712,12 @@ function attachReq2buf() {
     });
 
     // 在出口处拦截req2buf，把insertMsgAddr设置为0，避免被垃圾回收导致整个程序崩溃
-    console.log("[+] Target Req2buf leave Address: " + req2bufExitAddr);
     Interceptor.attach(req2bufExitAddr, {
         onEnter: function (args) {
             if (!this.context.x25.equals(taskIdGlobal)) {
                 return;
             }
             insertMsgAddr.writeU64(0x0);
-            console.log("[+] 清空写入后内存预览: " + insertMsgAddr.readPointer());
             taskIdGlobal = 0;
             receiverGlobal = "";
             senderGlobal = "";
@@ -835,7 +820,6 @@ function patchImgProtoBuf() {
     Interceptor.attach(imageCallbackFuncAddr, {
         onEnter: function (args) {
             var firstValue = this.context.sp.add(0x10).readU32();
-            console.log("[+] 捕获到 ImageCallbackFunc 调用，firstValue：", firstValue, "X1地址：", taskIdGlobal);
             if (firstValue === taskIdGlobal) {
                 if (patchImgProtobufFunc1.readU32() !== 3573751839) {
                     Memory.patchCode(patchImgProtobufFunc1, 4, code => {
@@ -884,7 +868,6 @@ function patchVideoProtoBuf() {
     Interceptor.attach(videoCallbackFuncAddr, {
         onEnter: function (args) {
             var firstValue = this.context.sp.add(0x10).readU32();
-            console.log("[+] 捕获到 ImageCallbackFunc 调用，firstValue：", firstValue, "X1地址：", taskIdGlobal);
             if (firstValue === taskIdGlobal) {
                 if (patchVideoProtobufFunc1.readU32() !== 3573751839) {
                     Memory.patchCode(patchVideoProtobufFunc1, 4, code => {
@@ -1011,7 +994,6 @@ function triggerSendImgMessage(taskId, sender, receiver) {
     triggerX1Payload.add(0x190).writePointer(triggerX1Payload.add(0x198));
     sendMsgType = "img"
 
-    console.log("finished init image payload")
     const MMStartTask = new NativeFunction(sendFuncAddr, 'int64', ['pointer', 'pointer']);
 
     // 5. 调用函数
@@ -1024,7 +1006,6 @@ function triggerSendImgMessage(taskId, sender, receiver) {
 }
 
 function triggerSendVideoMessage(taskId, sender, receiver) {
-    console.log("[+] Manual Trigger Started...");
     if (!taskId || !receiver || !sender) {
         console.error("[!] taskId or receiver or sender is empty!");
         return "fail";
@@ -1106,7 +1087,6 @@ function triggerSendVideoMessage(taskId, sender, receiver) {
     triggerX1Payload.add(0x190).writePointer(triggerX1Payload.add(0x198));
     sendMsgType = "video"
 
-    console.log("finished init video payload")
     const MMStartTask = new NativeFunction(sendFuncAddr, 'int64', ['pointer', 'pointer']);
 
     // 5. 调用函数
@@ -1223,7 +1203,6 @@ function attachProto() {
                 aesKey1Header, aesKey1, md5Header, me5Key, randomId9, left0)
 
             imgProtoX1PayloadAddr.writeByteArray(finalPayload);
-            console.log("[+] 图片 Payload 已写入，长度: " + finalPayload.length);
 
             this.context.x1 = imgProtoX1PayloadAddr;
             this.context.x2 = ptr(finalPayload.length);
@@ -1242,7 +1221,6 @@ function attachProto() {
 
             var currTaskId = this.context.sp.add(0x30).readU32();
             if (currTaskId !== taskIdGlobal) {
-                console.log(`[+] 拦截到非目标 currTaskId: ${currTaskId} taskIdGlobal: ${taskIdGlobal}`);
                 return;
             }
 
@@ -1346,7 +1324,6 @@ function attachProto() {
                 md5Key1, randomId7, md5Key2Header, md5Key2, cdn3Header, cdn3, randomId8, md5Key3, left0)
 
             videoProtoX1PayloadAddr.writeByteArray(finalPayload);
-            console.log("[+] 视频Payload 已写入，长度: " + finalPayload.length);
 
             this.context.x1 = videoProtoX1PayloadAddr;
             this.context.x2 = ptr(finalPayload.length);
@@ -1473,7 +1450,7 @@ function triggerUploadImg(receiver, md5, imagePath) {
 
     const startUploadMedia = new NativeFunction(uploadImageAddr, 'int64', ['pointer', 'pointer']);
 
-    console.log(`开始手动触发 C2C 上传 X0 ${uploadGlobalX0}, X1: ${uploadImageX1}`);
+    console.log(`[+] triggerUploadImg X0: ${uploadGlobalX0}`);
     return startUploadMedia(uploadGlobalX0, uploadImageX1);
 }
 
@@ -1612,9 +1589,8 @@ function attachUploadMedia() {
                     type: "upload",
                     self_id: selfId,
                 })
-                console.log("UploadMedia x0: " + uploadGlobalX0 + " filePath: " + filePath + " selfId: " + selfId);
             } catch (e) {
-                console.log("[-] attachUploadMedia error: " + e);
+                console.error("[-] attachUploadMedia error: " + e);
                 uploadGlobalX0 = this.context.x0;
             }
         }
@@ -1644,9 +1620,6 @@ function patchCdnOnComplete() {
                 const md5Key = x2.add(0x90).readPointer().readUtf8String();
                 const videoId = x2.add(0xf0).readPointer().readUtf8String();
                 const targetId = x2.add(0x40).readUtf8String();
-
-                console.log("X2: " + x2 + "[+] cdnKey: " + cdnKey + " aesKey: " + aesKey +
-                    " md5Key: " + md5Key + " videoId:" + videoId);
 
                 send({
                     type: "finish",
@@ -1692,7 +1665,7 @@ function patchCdnOnComplete() {
                     console.error("cdnKey or aesKey or md5key 为空");
                 }
             } catch (e) {
-                console.log("[-] Memory access error at onEnter: " + e);
+                console.error("[-] CdnOnComplete error: " + e);
             }
         }
     });
@@ -1714,9 +1687,8 @@ function attachGetCallbackFromWrapper() {
 
                 uploadCallback.add(0x10).writePointer(uploadGetCallbackWrapperFuncAddr);
                 this.context.x8 = uploadCallback;
-                console.log("[+] GetCallbackFromWrapper x8: " + this.context.x8);
             } catch (e) {
-                console.log("[-] GetCallbackFromWrapper error: " + e);
+                console.error("[-] GetCallbackFromWrapper error: " + e);
             }
         }
     })
@@ -1734,9 +1706,8 @@ function attachGetCallbackFromWrapper() {
 
                 uploadCallback.add(0x30).writePointer(uploadOnCompleteFuncAddr);
                 this.context.x8 = uploadCallback;
-                console.log("[+] OnComplete x8: " + this.context.x8);
             } catch (e) {
-                console.log("[-] OnComplete error: " + e);
+                console.error("[-] OnComplete error: " + e);
             }
         }
     })
@@ -1870,7 +1841,6 @@ function setReceiver() {
             var fileIDAddr = this.context.x1.add(0x40).readPointer();
             var fileId = fileIDAddr?.readUtf8String();
             const t = this.context.x1.add(0xA0).readU32()
-            console.log(" [+] download file: ", fileId, " type", t);
             if (t === 3) {
                 if (fileId.endsWith("_1")) {
                     this.context.x1.add(0xA0).writeU32(0x02);
